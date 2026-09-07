@@ -30,8 +30,8 @@ def get_blobs(frame, lower, upper):
 def draw_dots(frame: np.ndarray, pts: list)-> np.ndarray:
     processed_frame = frame.copy()
     for i, pt in enumerate((tuple(i) for i in pts)):
-        cv2.circle(processed_frame, (int(pt[0]), int(pt[0])), 7, (0, 255, 0), -1)
-        cv2.putText(processed_frame, f"P{i}", (int(pt[0])+10, int(pt[0])-10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+        cv2.circle(processed_frame, (int(pt[0]), int(pt[1])), 7, (0, 255, 0), -1)
+        cv2.putText(processed_frame, f"P{i}", (int(pt[0])+10, int(pt[1])-10), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
     return processed_frame
 
 def convexHullDots(dots: list) -> tuple[list, list]:
