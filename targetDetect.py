@@ -103,6 +103,8 @@ route= [] #예정 경로
 # 포즈 모델 사용
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
+        
+        print(3)
         success, frame = cap.read()
         if not success:
             print("카메라로부터 영상을 가져올 수 없습니다.")
@@ -127,6 +129,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 except Exception as e:
                     print(f"Error: {e}")
         ############################################
+        print(4)
 
                 
         # 포즈 랜드마크가 감지되면 랜드마크와 연결선 그리기
@@ -159,35 +162,50 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             robotDetected(bool)
             robotPos(tuple)
         '''
+        
+        print(5)
 
         if len(bodyPoints) != 0:
             ###############옆구리 계산 및 표시 ##################
             arr= [bodyPoints[11], bodyPoints[23]]
-            d= ((arr[0][0]+arr[1][0])/2, (arr[0][1]+arr[1][1])/2)
+            d= (int(arr[0][0]+arr[1][0])//2, int(arr[0][1]+arr[1][1])//2)
             cv2.circle(frame, d, 10, (255, 125, 0), -1)
             ##################################################
             
             if matrix is not None and True:#robotDetected:
                 tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
                 ressss= get_transformed_screen_vertices(matrix, w, h)
-                lx= abs(ressss['min_max_limits'][0]-ressss['min_max_limits'][2])
-                ly= abs(ressss['min_max_limits'][1]-ressss['min_max_limits'][3])
-                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, (lx,ly), lx, ly, 10, 30) #robotPos
-
+                lx= int(abs(ressss['min_max_limits'][0]-ressss['min_max_limits'][2]))
+                ly= int(abs(ressss['min_max_limits'][1]-ressss['min_max_limits'][3]))
+                d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
+                d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
+                d3= ((d1[0]+d2[0]*2) / 3, (d1[1]+d2[1]*2) / 3)
+                lx,ly= d3[0]+750,d3[1]+300
+                print("start")
+                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, (lx,ly), d3, 75,lx, ly, 25, 30) #robotPos
+                print("end")
+                #print(route)
         if len(route) != 0 and True:#robotDetected:
             pass
             # 대충 로봇 조종
-
+        
+        print(6)
+        
 
         # 결과 화면 출력
         cv2.imshow('Pose Detection1', frame)
         try:
-            if matrix is not None and matrix_inv is not None:
+            if matrix is not None and matrix_inv is not None and True:
                 if len(route) != 0:
+                   print(len(route), 0)
                    aaRoute= [transform_to_screen(matrix_inv, pptt) for pptt in route]
+                   print(len(route), 1)
                    frame = draw_robot_path(frame, aaRoute) 
-                ff= warp_perspective_no_crop(frame, matrix)
-                cv2.imshow('Pose Detection2', ff)
+                   print(len(route), 2)
+                ##ff= warp_perspective_no_crop(frame, matrix)
+                
+                #ff = cv2.resize(ff, (w, h))
+                cv2.imshow('Pose Detection2', frame)
         except Exception as e:
             print(f"Error: {e}")
         
@@ -200,33 +218,3 @@ cap.release()
 cv2.destroyAllWindows()
 
 
-
-
-
-# import math
-            # if matrix is not None:
-            #     x1, y1 = get3Dpos(matrix, arr[0])
-            #     x2, y2 = get3Dpos(matrix, arr[1])
-            #     x3, y3 = (x1+x2)/2, (y1+y2)/2
-                
-            #     blue_pts.append(transform_to_screen(matrix_inv, (x1,y1)))
-            #     blue_pts.append(transform_to_screen(matrix_inv, (x2,y2)))
-            #     blue_pts.append(transform_to_screen(matrix_inv, (x3,y3)))
-                
-            #     for i in range(360):
-            #         x4, y4= math.cos((i*math.pi)/180) * 500, math.sin((i*math.pi)/180) * 500
-            #         d2= transform_to_screen(matrix_inv, (x4+x3, y4+y3))
-            #         blue_pts.append(d2)
-            
-
-            # if matrix is not None:
-            #             for bp in blue_pts:
-            #                 # x3d, y3d = get3Dpos(matrix, bp)
-            #                 bp= tuple(map(int, bp))
-            #                 cv2.circle(frame, bp, 10, (255, 0, 0), -1)
-            #                 #cv2.putText(frame, f"3D: ({x3d:.0f}, {y3d:.0f})", (bp[0]+10, bp[1]), 
-            #                 #            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-                        
-                        
-            #             #cv2.circle(frame, d2, radius=5, color=(0, 0, 255), thickness=-1)
-                     
