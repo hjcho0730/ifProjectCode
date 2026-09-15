@@ -44,14 +44,19 @@ def get_single_marker_corners_list(
     return False, None, debug_image
 
   ids = ids.flatten()
+  
+  print(ids)
 
+  # 3. 타겟 ID 찾기
   # 3. 타겟 ID 찾기
   target_idx = -1
   for i, marker_id in enumerate(ids):
+    print(marker_id)
     if marker_id == target_id:
       target_idx = i
       break
-
+  
+      
   if target_idx == -1:
     cv2.putText(
         debug_image,
@@ -101,16 +106,33 @@ matrix_inv= None  # 3D -> 2D
 bodyPoints= [] #2D 스크린 좌표
 route= [] #예정 경로
 # 포즈 모델 사용
+center= (0,0)
+RobotDetected= False
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
-        
-        print(3)
         success, frame = cap.read()
         if not success:
             print("카메라로부터 영상을 가져올 수 없습니다.")
             continue
+        
+        suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=1)
+        
+        RobotDetected=False
+        if suc:    
+            center = np.mean(markPts, axis=0)
+            
+            foreward= np.mean(markPts[:2], axis=0)
+            
+            cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
+            cv2.circle(frame, tuple(int(i) for i in foreward), 10, (255, 125, 0), -1)
+            
+            RobotDetected= True
+        
         suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=0)
+        
         frame= dImage
+
+
 
         h,w,_= frame.shape
 
@@ -129,8 +151,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 except Exception as e:
                     print(f"Error: {e}")
         ############################################
-        print(4)
-
                 
         # 포즈 랜드마크가 감지되면 랜드마크와 연결선 그리기
         blue_pts= []
@@ -163,7 +183,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             robotPos(tuple)
         '''
         
-        print(5)
 
         if len(bodyPoints) != 0:
             ###############옆구리 계산 및 표시 ##################
@@ -172,7 +191,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             cv2.circle(frame, d, 10, (255, 125, 0), -1)
             ##################################################
             
-            if matrix is not None and True:#robotDetected:
+            if matrix is not None and RobotDetected:
                 tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
                 ressss= get_transformed_screen_vertices(matrix, w, h)
                 lx= int(abs(ressss['min_max_limits'][0]-ressss['min_max_limits'][2]))
@@ -180,16 +199,16 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
                 d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
                 d3= ((d1[0]+d2[0]*2) / 3, (d1[1]+d2[1]*2) / 3)
-                lx,ly= d3[0]+750,d3[1]+300
                 print("start")
-                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, (lx,ly), d3, 75,lx, ly, 25, 30) #robotPos
+                
+                pos= get3Dpos(matrix, center)
+                
+                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 75,lx, ly, 25, 40) #robotPos
                 print("end")
                 #print(route)
         if len(route) != 0 and True:#robotDetected:
             pass
             # 대충 로봇 조종
-        
-        print(6)
         
 
         # 결과 화면 출력
@@ -197,11 +216,8 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         try:
             if matrix is not None and matrix_inv is not None and True:
                 if len(route) != 0:
-                   print(len(route), 0)
                    aaRoute= [transform_to_screen(matrix_inv, pptt) for pptt in route]
-                   print(len(route), 1)
                    frame = draw_robot_path(frame, aaRoute) 
-                   print(len(route), 2)
                 ##ff= warp_perspective_no_crop(frame, matrix)
                 
                 #ff = cv2.resize(ff, (w, h))
