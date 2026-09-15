@@ -117,12 +117,39 @@ def find_robot_path(points_list, connections, robot_start, target_pos, radius,
         return dist(p, proj)
 
     # ---------- 1. 장애물 선분 구성 ----------
+    import math
+
     segments = []
     n_points = len(points_list)
+
     for conn in connections:
         i, j = conn[0], conn[1]
         if 0 <= i < n_points and 0 <= j < n_points:
-            segments.append((tuple(points_list[i]), tuple(points_list[j])))
+            p1 = points_list[i]
+            p2 = points_list[j]
+            
+            # 1. 원본 선분 추가
+            segments.append((tuple(p1), tuple(p2)))
+            
+            # 2. 패딩(padding_radius)을 고려한 평행선(안전 영역) 추가
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            length = math.hypot(dx, dy)
+            
+            if length > 1e-5:
+                # 단위 수직 벡터 계산 후 padding_radius 곱하기
+                nx = -dy / length * padding_radius
+                ny = dx / length * padding_radius
+                
+                # 좌측 평행선
+                p1_left = (p1[0] + nx, p1[1] + ny)
+                p2_left = (p2[0] + nx, p2[1] + ny)
+                segments.append((p1_left, p2_left))
+                
+                # 우측 평행선
+                p1_right = (p1[0] - nx, p1[1] - ny)
+                p2_right = (p2[0] - nx, p2[1] - ny)
+                segments.append((p1_right, p2_right))
 
     # ---------- 2. 공간 해시(버킷) 인덱싱 ----------
     bucket_size = max(grid_step * 2, padding_radius * 2)
