@@ -10,6 +10,12 @@ from lineMade import *
 current_path = os.getcwd()
 file_path = os.path.join(current_path, "my_list.txt")
 
+def trimmed_mean(values):
+    # 프레임이 2개 이하일 때는 이상치 제거 없이 전체 평균 반환
+    if len(values) <= 2:
+        return sum(values) / len(values)
+    return (sum(values) - max(values) - min(values)) / (len(values) - 2)
+
 # 1. 아루코 사전 및 검출기 설정
 dictionary_id=cv2.aruco.DICT_4X4_50
 aruco_dict = cv2.aruco.getPredefinedDictionary(dictionary_id)
@@ -106,6 +112,10 @@ matrix_inv= None  # 3D -> 2D
 bodyPoints= [] #2D 스크린 좌표
 route= [] #예정 경로
 # 포즈 모델 사용
+
+planeDots= []
+sceneFrame= 0 # 0 ~ 99
+
 center= (0,0)
 RobotDetected= False
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
@@ -127,11 +137,18 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             cv2.circle(frame, tuple(int(i) for i in foreward), 10, (255, 125, 0), -1)
             
             RobotDetected= True
+            
         
         suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=0)
         
+        if suc:
+            print(markPts)
+            planeDots.append(markPts)
+            if len(planeDots) > 8:
+                planeDots.pop(0)
+            print(planeDots)
+        
         frame= dImage
-
 
 
         h,w,_= frame.shape
@@ -143,9 +160,17 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
 
         ########### 변환 행렬 계산 ###################
         if suc:
-            frame= draw_dots(frame, markPts)
+            AverDots = [
+                [
+                    trimmed_mean([j[i][k] for j in planeDots])
+                    for k in range(2)
+                ]
+                for i in range(4)
+            ]            #print(markPts)
+            #print(AverDots)
+            frame= draw_dots(frame, AverDots)
             if len(markPts) == 4:
-                matrix= getMatrix4(markPts, R)
+                matrix= getMatrix4(AverDots, R)
                 try:
                     matrix_inv = np.linalg.inv(matrix)
                 except Exception as e:
@@ -203,7 +228,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 
                 pos= get3Dpos(matrix, center)
                 
-                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 75,lx, ly, 25, 40) #robotPos
+                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 500,lx*4, ly*4, 75, 100) #robotPos
                 print("end")
                 #print(route)
         if len(route) != 0 and True:#robotDetected:
@@ -218,10 +243,10 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 if len(route) != 0:
                    aaRoute= [transform_to_screen(matrix_inv, pptt) for pptt in route]
                    frame = draw_robot_path(frame, aaRoute) 
-                ##ff= warp_perspective_no_crop(frame, matrix)
+                ff= warp_perspective_no_crop(frame, matrix)
                 
-                #ff = cv2.resize(ff, (w, h))
-                cv2.imshow('Pose Detection2', frame)
+                ff = cv2.resize(ff, (w, h))
+                cv2.imshow('Pose Detection2', ff)
         except Exception as e:
             print(f"Error: {e}")
         
@@ -232,5 +257,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
 # 웹캠을 닫고 모든 창을 닫습니다.
 cap.release()
 cv2.destroyAllWindows()
+
 
 
