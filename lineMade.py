@@ -150,6 +150,15 @@ def find_robot_path(points_list, connections, robot_start, target_pos, radius,
                 p1_right = (p1[0] - nx, p1[1] - ny)
                 p2_right = (p2[0] - nx, p2[1] - ny)
                 segments.append((p1_right, p2_right))
+                
+                segments.append((p1_right, p1_left))
+                segments.append((p2_left, p2_right))
+                
+                points_list.append(p1_left)
+                points_list.append(p2_left)
+                points_list.append(p1_right)
+                points_list.append(p2_right)
+                
 
     # ---------- 2. 공간 해시(버킷) 인덱싱 ----------
     bucket_size = max(grid_step * 2, padding_radius * 2)
