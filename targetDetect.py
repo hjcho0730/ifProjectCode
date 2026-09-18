@@ -7,6 +7,30 @@ import numpy as np
 from matrixCal import *
 from lineMade import *
 
+carMovable= False
+if carMovable:
+    import serial
+
+    # 아까 확인한 내 컴퓨터의 COM 번호로 꼭 바꿔주세요! (예: 'COM5')
+    bluetooth_port = 'COM6' 
+
+    print("블루투스 자동차에 연결하는 중...")
+    # 자동차와 블루투스 전화 연결!
+    car = serial.Serial(bluetooth_port, 9600)
+    time.sleep(2) # 연결될 때까지 2초 정도 기다려줍니다.
+
+    def turn(dire):
+        if dire == "CW":
+            car.write(b"left\n") 
+        if dire == "CCW":
+            car.write(b"right\n")
+            
+    def stop():
+        car.write(b'stop\n')
+        
+    def move():
+        car.write(b'go\n')
+
 current_path = os.getcwd()
 file_path = os.path.join(current_path, "my_list.txt")
 
@@ -106,6 +130,7 @@ mp_pose = mp.solutions.pose
 
 # 웹캠을 열어 실시간으로 영상을 가져옵니다.
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 matrix= None  # 2D -> 3D
 matrix_inv= None  # 3D -> 2D
@@ -117,6 +142,7 @@ planeDots= []
 sceneFrame= 0 # 0 ~ 99
 
 center= (0,0)
+forward= (0,0)
 RobotDetected= False
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
@@ -131,10 +157,10 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         if suc:    
             center = np.mean(markPts, axis=0)
             
-            foreward= np.mean(markPts[:2], axis=0)
+            forward= np.mean(markPts[:2], axis=0)
             
             cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
-            cv2.circle(frame, tuple(int(i) for i in foreward), 10, (255, 125, 0), -1)
+            cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
             
             RobotDetected= True
             
@@ -142,11 +168,9 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=0)
         
         if suc:
-            print(markPts)
             planeDots.append(markPts)
             if len(planeDots) > 8:
                 planeDots.pop(0)
-            print(planeDots)
         
         frame= dImage
 
@@ -208,7 +232,14 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             robotPos(tuple)
         '''
         
-
+        pos= (0,0)
+        forwardPos= (0,0)
+        if matrix is not None and RobotDetected:
+            pos= get3Dpos(matrix, center)
+            forwardPos= get3Dpos(matrix, forward)
+        
+        
+        d3= (0,0)
         if len(bodyPoints) != 0:
             ###############옆구리 계산 및 표시 ##################
             arr= [bodyPoints[11], bodyPoints[23]]
@@ -224,16 +255,37 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
                 d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
                 d3= ((d1[0]+d2[0]*2) / 3, (d1[1]+d2[1]*2) / 3)
-                print("start")
                 
                 pos= get3Dpos(matrix, center)
                 
-                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 500,lx*4, ly*4, 75, 100) #robotPos
-                print("end")
+                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 300,lx*8, ly*8, 100, 400) #robotPos
+                
+                
                 #print(route)
-        if len(route) != 0 and True:#robotDetected:
-            pass
-            # 대충 로봇 조종
+        
+        if carMovable:
+            if not (matrix is not None):
+                stop()
+            else:
+                if not RobotDetected:
+                    stop()
+                else:
+                    if len(bodyPoints) == 0:
+                        stop()
+                    else:
+                        if np.hypot((pos[0]-d3[0], pos[1]-d3[1])) < 150:
+                            stop()
+                        else:
+                            if len(route) <= 1:
+                                stop()
+                            else:
+                                direction, angle= calculate_rotation(pos, forwardPos, route[1])
+                                print(direction, angle)
+                                
+                                if angle > 5:
+                                    turn(direction)
+                                else:
+                                    move()
         
 
         # 결과 화면 출력
@@ -258,5 +310,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
 cap.release()
 cv2.destroyAllWindows()
 
+
+car.close()
 
 
