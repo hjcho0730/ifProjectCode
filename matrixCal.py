@@ -50,13 +50,13 @@ def getMatrix4(outer_pts, R):
     outer_pts: [[x1, y1], [x2, y2], [x3, y3], [x4, y4]] 형태의 4개 점 리스트 또는 numpy 배열
     """
     # 1. 4점의 중심점(외심/평균 중심) 계산
-    pts_np = np.array(outer_pts, dtype=np.float32)
-    center_pt = np.mean(pts_np, axis=0)
+    #pts_np = np.array(outer_pts, dtype=np.float32)
+    #center_pt = np.mean(pts_np, axis=0)
     
     # 2. 중심점 기준 각도순으로 점들 정렬 (시계/반시계 일관성 유지)
-    angles = [np.arctan2(p[1] - center_pt[1], p[0] - center_pt[0]) for p in pts_np]
-    sorted_indices = np.argsort(angles)
-    sorted_outer = [outer_pts[i] for i in sorted_indices]
+    #angles = [np.arctan2(p[1] - center_pt[1], p[0] - center_pt[0]) for p in pts_np]
+    #sorted_indices = np.argsort(angles)
+    #sorted_outer = [outer_pts[i] for i in sorted_indices]
     
     sorted_outer= outer_pts
     
