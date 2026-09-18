@@ -58,6 +58,8 @@ def getMatrix4(outer_pts, R):
     sorted_indices = np.argsort(angles)
     sorted_outer = [outer_pts[i] for i in sorted_indices]
     
+    sorted_outer= outer_pts
+    
     # 3. 정렬된 순서에 맞춰 이상적인 정사각형 좌표(IDEAL_PTS) 동적 생성
     # 첫 번째 점의 중심으로부터의 거리(반지름 R)를 기준으로 정사각형 크기 설정
     #R = np.linalg.norm(sorted_outer[0] - center_pt)
@@ -218,3 +220,4 @@ if __name__ == "__main__":
 
     cap.release()
     cv2.destroyAllWindows()
+
