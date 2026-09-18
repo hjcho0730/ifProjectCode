@@ -128,13 +128,20 @@ def find_robot_path(points_list, connections, robot_start, target_pos, radius,
             p1 = points_list[i]
             p2 = points_list[j]
             
-            # 1. 원본 선분 추가
-            segments.append((tuple(p1), tuple(p2)))
             
             # 2. 패딩(padding_radius)을 고려한 평행선(안전 영역) 추가
             dx = p2[0] - p1[0]
             dy = p2[1] - p1[1]
             length = math.hypot(dx, dy)
+            
+            nnx = dx / length * padding_radius
+            nny = dy / length * padding_radius
+            
+            p1= (p1[0]-nnx, p1[0]-nny)
+            p2= (p2[0]+nnx, p2[1]+nny)
+            
+            # 1. 원본 선분 추가
+            segments.append((tuple(p1), tuple(p2)))
             
             if length > 1e-5:
                 # 단위 수직 벡터 계산 후 padding_radius 곱하기
@@ -464,4 +471,5 @@ def get_transformed_screen_vertices(matrix, screen_width, screen_height):
         "bounding_box": bounding_box,            # 최소/최대 외곽 사각형 4개 꼭짓점
         "min_max_limits": (min_x, min_y, max_x, max_y) # (min_x, min_y, max_x, max_y)
     }
+
 
