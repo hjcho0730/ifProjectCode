@@ -1,0 +1,27 @@
+import serial
+
+# 아까 확인한 내 컴퓨터의 COM 번호로 꼭 바꿔주세요! (예: 'COM5')
+bluetooth_port = 'COM6' 
+
+print("블루투스 자동차에 연결하는 중...")
+# 자동차와 블루투스 전화 연결!
+car = serial.Serial(bluetooth_port, 9600)
+time.sleep(2) # 연결될 때까지 2초 정도 기다려줍니다.
+
+def turn(dire):
+    if dire == "CW":
+        car.write(b"left\n") 
+    if dire == "CCW":
+        car.write(b"right\n")
+        
+def stop():
+    car.write(b'stop\n')
+    
+def move():
+    car.write(b'go\n')
+
+if __name__ == "__main__":
+    stop()
+    # 통신 종료
+    car.close()
+    print("테스트 끝!")
