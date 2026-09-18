@@ -2,6 +2,54 @@ import heapq
 import cv2
 import numpy as np
 
+import math
+
+def calculate_rotation(pos, forward_pos, target_pos):
+    """
+    pos: (x, y) - 현재 위치
+    forward_pos: (x, y) - 현재 바라보는 방향 좌표
+    target_pos: (x, y) - 이동해야 할 다음 위치 (route[1])
+    
+    returns: (direction, angle_degrees)
+             direction: 'CW' (시계 방향) 또는 'CCW' (반시계 방향)
+             angle_degrees: 회전해야 하는 각도 (0 ~ 180도)
+    """
+    # 1. 현재 바라보는 방향 벡터 (V_forward)
+    v_f_x = forward_pos[0] - pos[0]
+    v_f_y = forward_pos[1] - pos[1]
+    
+    # 2. 목표 지점을 향하는 벡터 (V_target)
+    v_t_x = target_pos[0] - pos[0]
+    v_t_y = target_pos[1] - pos[1]
+    
+    # 3. 벡터 크기 (Magnitude) 계산
+    mag_f = math.hypot(v_f_x, v_f_y)
+    mag_t = math.hypot(v_t_x, v_t_y)
+    
+    # 예외 처리: 위치가 같아 방향을 정의할 수 없는 경우
+    if mag_f == 0 or mag_t == 0:
+        return 'NONE', 0.0
+    
+    # 4. 내적(Dot Product)을 이용한 각도 계산
+    dot_product = v_f_x * v_t_x + v_f_y * v_t_y
+    # 부동소수점 오차로 인해 cos_theta가 [-1.0, 1.0] 범위를 벗어나는 것 방지
+    cos_theta = max(-1.0, min(1.0, dot_product / (mag_f * mag_t)))
+    
+    angle_rad = math.acos(cos_theta)
+    angle_deg = math.degrees(angle_rad)
+    
+    # 5. 외적(Cross Product) 2D z성분을 이용한 회전 방향 결정
+    # cross_product > 0: 반시계 방향(CCW)
+    # cross_product < 0: 시계 방향(CW)
+    cross_product = v_f_x * v_t_y - v_f_y * v_t_x
+    
+    if cross_product < 0:
+        direction = 'CCW'   # 반시계 방향
+    else:
+        direction = 'CW'  # 시계 방향
+        
+    return direction, round(angle_deg, 2)
+
 
 def draw_robot_path(
     img, path, robot_start=None, points_list=None, color=(255, 255, 0), thickness=2
@@ -65,14 +113,6 @@ def draw_robot_path(
 # cv2.imshow("Robot Route", result_img)
 # cv2.waitKey(0)
 # cv2.destroyAllWindows()
-
-
-
-import math
-
-
-import heapq
-import math
 
 
 import heapq
