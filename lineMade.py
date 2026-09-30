@@ -512,4 +512,342 @@ def get_transformed_screen_vertices(matrix, screen_width, screen_height):
         "min_max_limits": (min_x, min_y, max_x, max_y) # (min_x, min_y, max_x, max_y)
     }
 
+### 2 ver
+
+import heapq
+import cv2
+import numpy as np
+
+import math
+
+def calculate_rotation(pos, forward_pos, target_pos):
+    """
+    pos: (x, y) - 현재 위치
+    forward_pos: (x, y) - 현재 바라보는 방향 좌표
+    target_pos: (x, y) - 이동해야 할 다음 위치 (route[1])
+    
+    returns: (direction, angle_degrees)
+             direction: 'CW' (시계 방향) 또는 'CCW' (반시계 방향)
+             angle_degrees: 회전해야 하는 각도 (0 ~ 180도)
+    """
+    # 1. 현재 바라보는 방향 벡터 (V_forward)
+    v_f_x = forward_pos[0] - pos[0]
+    v_f_y = forward_pos[1] - pos[1]
+    
+    # 2. 목표 지점을 향하는 벡터 (V_target)
+    v_t_x = target_pos[0] - pos[0]
+    v_t_y = target_pos[1] - pos[1]
+    
+    # 3. 벡터 크기 (Magnitude) 계산
+    mag_f = math.hypot(v_f_x, v_f_y)
+    mag_t = math.hypot(v_t_x, v_t_y)
+    
+    # 예외 처리: 위치가 같아 방향을 정의할 수 없는 경우
+    if mag_f == 0 or mag_t == 0:
+        return 'NONE', 0.0
+    
+    # 4. 내적(Dot Product)을 이용한 각도 계산
+    dot_product = v_f_x * v_t_x + v_f_y * v_t_y
+    # 부동소수점 오차로 인해 cos_theta가 [-1.0, 1.0] 범위를 벗어나는 것 방지
+    cos_theta = max(-1.0, min(1.0, dot_product / (mag_f * mag_t)))
+    
+    angle_rad = math.acos(cos_theta)
+    angle_deg = math.degrees(angle_rad)
+    
+    # 5. 외적(Cross Product) 2D z성분을 이용한 회전 방향 결정
+    # cross_product > 0: 반시계 방향(CCW)
+    # cross_product < 0: 시계 방향(CW)
+    cross_product = v_f_x * v_t_y - v_f_y * v_t_x
+    
+    if cross_product < 0:
+        direction = 'CCW'   # 반시계 방향
+    else:
+        direction = 'CW'  # 시계 방향
+        
+    return direction, round(angle_deg, 2)
+
+
+def draw_robot_path(
+    img, path, robot_start=None, points_list=None, color=(255, 255, 0), thickness=2
+):
+  """반환된 path 리스트를 OpenCV 이미지(img) 위에 시각화합니다."""
+  vis_img = img.copy()
+
+  if not path or len(path) < 2:
+    print("표시할 경로가 없습니다.")
+    return vis_img
+
+  if robot_start == None:
+    robot_start= path[0]
+
+  # 1. 경로 선(Line) 그리기
+  for i in range(len(path) - 1):
+    pt1 = (int(round(path[i][0])), int(round(path[i][1])))
+    pt2 = (int(round(path[i + 1][0])), int(round(path[i + 1][1])))
+    cv2.line(vis_img, pt1, pt2, color, thickness)
+
+  # 2. 경로 상의 중간 격자점 표시 (작은 흰색 점)
+  for pt in path[1:-1]:
+    cv2.circle(
+        vis_img, (int(round(pt[0])), int(round(pt[1]))), 3, (255, 255, 255), -1
+    )
+
+  # 3. 로봇 시작 위치 표시 (파란색 원)
+  start_pt = (int(round(robot_start[0])), int(round(robot_start[1])))
+  cv2.circle(vis_img, start_pt, 8, (255, 0, 0), -1)
+  cv2.putText(
+      vis_img,
+      "Robot",
+      (start_pt[0] - 15, start_pt[1] + 20),
+      cv2.FONT_HERSHEY_SIMPLEX,
+      0.5,
+      (255, 0, 0),
+      1,
+  )
+
+  # 4. 최종 목적지(심장 부근 후보점) 표시 (초록색 원)
+  goal_pt = (int(round(path[-1][0])), int(round(path[-1][1])))
+  cv2.circle(vis_img, goal_pt, 8, (0, 255, 0), -1)
+  cv2.putText(
+      vis_img,
+      "Goal",
+      (goal_pt[0] - 15, goal_pt[1] - 10),
+      cv2.FONT_HERSHEY_SIMPLEX,
+      0.5,
+      (0, 255, 0),
+      1,
+  )
+
+  return vis_img
+# 사용 예시:
+# width, height = 600, 600
+# base_img = np.zeros((height, width, 3), dtype=np.uint8) # 또는 장애물 마스크 기반 이미지
+# robot_start = (43.7, 552.3)
+# path = find_robot_path(points_list, connections, robot_start)
+#
+# result_img = draw_robot_path(base_img, path, robot_start)
+# cv2.imshow("Robot Route", result_img)
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
+import heapq
+import math
+
+def find_robot_path(points_list, connections, robot_start, target_pos, radius, padding_radius=25):
+    """
+    열린 연속 공간(Continuous Space) 기반 최적 경로 탐색
+    - width, height 제약 없음
+    - 선분 장애물 주변에 padding_radius 만큼의 다각형(Capsule 형태) 안전 영역 생성
+    - 시가지 그래프(Visibility Graph) + A* 알고리즘으로 최적/안전 경로 탐색
+    - target_pos와 radius 거리 이내의 지점 중 가장 접근하기 좋은 도착점 선택
+    """
+
+    def dist(a, b):
+        return math.hypot(a[0] - b[0], a[1] - b[1])
+
+    def dist2(a, b):
+        return (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2
+
+    def point_segment_distance(p, a, b):
+        px, py = p
+        ax, ay = a
+        bx, by = b
+        dx, dy = bx - ax, by - ay
+        if dx == 0 and dy == 0:
+            return dist(p, a)
+        t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+        t = max(0.0, min(1.0, t))
+        proj = (ax + t * dx, ay + t * dy)
+        return dist(p, proj)
+
+    robot_start = tuple(robot_start)
+    target_pos = tuple(target_pos)
+
+    # ---------- 1. 장애물 선분 및 패딩 다각형(Capsule Body) 생성 ----------
+    obstacle_capsules = []
+    nav_nodes = set()
+    nav_nodes.add(robot_start)
+
+    n_points = len(points_list)
+    for conn in connections:
+        i, j = conn[0], conn[1]
+        if 0 <= i < n_points and 0 <= j < n_points:
+            p1 = tuple(points_list[i])
+            p2 = tuple(points_list[j])
+            
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            length = math.hypot(dx, dy)
+            if length < 1e-6:
+                continue
+
+            # 단위 수직/수평 벡터
+            ux, uy = dx / length, dy / length
+            nx, ny = -uy * padding_radius, ux * padding_radius
+            px, py = ux * padding_radius, uy * padding_radius
+
+            # 장애물 선분을 두러싸는 캡슐 형태의 4개 코너 포인트 (안전 노드)
+            c1 = (p1[0] - px + nx, p1[1] - py + ny)
+            c2 = (p2[0] + px + nx, p2[1] + py + ny)
+            c3 = (p2[0] + px - nx, p2[1] + py - ny)
+            c4 = (p1[0] - px - nx, p1[1] - py - ny)
+
+            obstacle_capsules.append({
+                'p1': p1, 'p2': p2,
+                'poly': [c1, c2, c3, c4]
+            })
+
+            # 우회 경로로 사용할 길찾기 노드 후보 추가
+            nav_nodes.update([c1, c2, c3, c4])
+
+    # ---------- 2. 위치 충돌 체크 (안전 영역 내부인지) ----------
+    def is_blocked(p):
+        for cap in obstacle_capsules:
+            if point_segment_distance(p, cap['p1'], cap['p2']) < padding_radius - 1e-5:
+                return True
+        return False
+
+    # ---------- 3. Line-of-Sight (두 점 사이 직진 가능 여부) ----------
+    def is_line_clear(a, b):
+        d = dist(a, b)
+        if d < 1e-6:
+            return True
+        
+        # 선분-선분 교차 및 선분-장애물 거리를 세밀하게 체크
+        steps = max(2, int(d / (padding_radius * 0.5)))
+        dx = (b[0] - a[0]) / steps
+        dy = (b[1] - a[1]) / steps
+
+        for k in range(steps + 1):
+            chk = (a[0] + dx * k, a[1] + dy * k)
+            if is_blocked(chk):
+                return False
+        return True
+
+    # ---------- 4. 최적의 도착 지점 후보 선정 ----------
+    # target_pos를 중심점으로 반경 radius 이내의 유효한 도착점 선정
+    target_candidates = []
+    
+    # Target 자체 직진 시도
+    if not is_blocked(target_pos):
+        target_candidates.append(target_pos)
+
+    # Target 주위 원형 샘플링 (경계선 접근 지점들)
+    num_samples = 12
+    for k in range(num_samples):
+        angle = 2 * math.pi * k / num_samples
+        cand = (target_pos[0] + radius * math.cos(angle), 
+                target_pos[1] + radius * math.sin(angle))
+        if not is_blocked(cand):
+            target_candidates.append(cand)
+
+    if not target_candidates:
+        # radius 이내에 유효한 점이 없으면 target_pos와 가장 가까운 보정점 찾기
+        target_candidates = [target_pos]
+
+    # ---------- 5. A* 길찾기 (Visibility Graph 기반) ----------
+    # 유효한 그래프 노드만 필터링
+    valid_nav_nodes = [n for n in nav_nodes if not is_blocked(n)]
+
+    def solve_astar(start, goal):
+        nodes = valid_nav_nodes + [goal] if goal not in valid_nav_nodes else valid_nav_nodes
+        
+        # 출발지에서 direct line-of-sight 체크
+        if is_line_clear(start, goal):
+            return [start, goal], dist(start, goal)
+
+        open_set = [(dist(start, goal), 0.0, start, [start])]
+        visited = {}
+
+        while open_set:
+            f, g, curr, path = heapq.heappop(open_set)
+
+            if curr in visited and visited[curr] <= g:
+                continue
+            visited[curr] = g
+
+            if dist2(curr, goal) < 1e-5:
+                return path, g
+
+            # 이웃 노드 확장 (Line of sight가 확보된 노드로만 이동)
+            for nxt in nodes:
+                if nxt == curr:
+                    continue
+                d = dist(curr, nxt)
+                if g + d >= visited.get(nxt, math.inf):
+                    continue
+
+                if is_line_clear(curr, nxt):
+                    heapq.heappush(open_set, (g + d + dist(nxt, goal), g + d, nxt, path + [nxt]))
+
+        return None, math.inf
+
+    # ---------- 6. 각 후보 목표 지점별 최단 경로 검색 및 선택 ----------
+    best_path = []
+    min_total_cost = math.inf
+
+    # 로봇 시작점에서 바로 접근 가능한 후보 탐색
+    for goal in target_candidates:
+        path, cost = solve_astar(robot_start, goal)
+        if path and cost < min_total_cost:
+            min_total_cost = cost
+            best_path = path
+
+    # 연속적인 경로 다듬기 (Path Smoothing / Shortcut)
+    if len(best_path) > 2:
+        smoothed = [best_path[0]]
+        i = 0
+        while i < len(best_path) - 1:
+            j = len(best_path) - 1
+            while j > i + 1:
+                if is_line_clear(smoothed[-1], best_path[j]):
+                    break
+                j -= 1
+            smoothed.append(best_path[j])
+            i = j
+        best_path = smoothed
+
+    return best_path
+
+import cv2
+import numpy as np
+
+def get_transformed_screen_vertices(matrix, screen_width, screen_height):
+    """
+    변환 행렬과 스크린(이미지)의 가로/세로 크기를 이용해 
+    변환된 좌표계에서의 스크린 4꼭짓점 위치와 최소/최대 바운딩 박스를 계산합니다.
+    """
+    # 스크린의 4개 모서리 좌표 (좌상, 우상, 우하, 좌하)
+    screen_corners = np.array([
+        [[0, 0]],
+        [[screen_width, 0]],
+        [[screen_width, screen_height]],
+        [[0, screen_height]]
+    ], dtype=np.float32)
+    
+    # 1. 원근 변환 적용 (스크린 좌표 -> 변환된 좌표계)
+    transformed_pts = cv2.perspectiveTransform(screen_corners, matrix)
+    transformed_pts = transformed_pts.reshape(-1, 2)  # shape: (4, 2)
+    
+    # 2. 변환된 좌표계에서의 최소/최대 범위 계산
+    min_x = np.min(transformed_pts[:, 0])
+    max_x = np.max(transformed_pts[:, 0])
+    min_y = np.min(transformed_pts[:, 1])
+    max_y = np.max(transformed_pts[:, 1])
+    
+    # 3. 최소/최대 지점을 기준으로 하는 바운딩 박스 꼭짓점 생성 (좌상, 우상, 우하, 좌하)
+    bounding_box = np.array([
+        [min_x, min_y],
+        [max_x, min_y],
+        [max_x, max_y],
+        [min_x, max_y]
+    ], dtype=np.float32)
+    
+    return {
+        "transformed_corners": transformed_pts,  # 변환된 실제 모서리 4개 점
+        "bounding_box": bounding_box,            # 최소/최대 외곽 사각형 4개 꼭짓점
+        "min_max_limits": (min_x, min_y, max_x, max_y) # (min_x, min_y, max_x, max_y)
+    }
+
+
+
 
