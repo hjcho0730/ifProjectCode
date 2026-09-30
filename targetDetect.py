@@ -7,12 +7,12 @@ import numpy as np
 from matrixCal import *
 from lineMade import *
 
-carMovable= False
+carMovable= True
 if carMovable:
-    import serial
+    import serial, time
 
     # 아까 확인한 내 컴퓨터의 COM 번호로 꼭 바꿔주세요! (예: 'COM5')
-    bluetooth_port = 'COM6' 
+    bluetooth_port = 'COM8' 
 
     print("블루투스 자동차에 연결하는 중...")
     # 자동차와 블루투스 전화 연결!
@@ -27,7 +27,6 @@ if carMovable:
             
     def stop():
         car.write(b'stop\n')
-        
     def move():
         car.write(b'go\n')
 
@@ -74,14 +73,12 @@ def get_single_marker_corners_list(
     return False, None, debug_image
 
   ids = ids.flatten()
-  
-  print(ids)
 
   # 3. 타겟 ID 찾기
   # 3. 타겟 ID 찾기
   target_idx = -1
   for i, marker_id in enumerate(ids):
-    print(marker_id)
+    #print(marker_id)
     if marker_id == target_id:
       target_idx = i
       break
@@ -129,7 +126,7 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 # 웹캠을 열어 실시간으로 영상을 가져옵니다.
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 matrix= None  # 2D -> 3D
@@ -249,16 +246,14 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             
             if matrix is not None and RobotDetected:
                 tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
-                ressss= get_transformed_screen_vertices(matrix, w, h)
-                lx= int(abs(ressss['min_max_limits'][0]-ressss['min_max_limits'][2]))
-                ly= int(abs(ressss['min_max_limits'][1]-ressss['min_max_limits'][3]))
                 d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
                 d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
                 d3= ((d1[0]+d2[0]*2) / 3, (d1[1]+d2[1]*2) / 3)
                 
                 pos= get3Dpos(matrix, center)
                 
-                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 300,lx*8, ly*8, 100, 400) #robotPos
+                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 250, 200) #robotPos
+                print(route)
                 
                 
                 #print(route)
@@ -273,7 +268,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                     if len(bodyPoints) == 0:
                         stop()
                     else:
-                        if np.hypot((pos[0]-d3[0], pos[1]-d3[1])) < 150:
+                        if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 150:
                             stop()
                         else:
                             if len(route) <= 1:
@@ -312,5 +307,6 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
+
 
 
