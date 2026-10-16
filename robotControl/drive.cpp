@@ -22,7 +22,7 @@ const int M2_IN2 = 12;
 const int M3_IN1 = 15;
 const int M3_IN2 = 14;
 
-const int motorSpeed = 200;
+const int motorSpeed = 160;
 
 
 // ==========================================
