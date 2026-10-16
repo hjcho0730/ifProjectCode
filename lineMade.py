@@ -121,356 +121,603 @@ import math
 _SQRT2 = math.sqrt(2.0)
 
 
-def find_robot_path(points_list, connections, robot_start, target_pos, radius,
-                     width=600, height=600, grid_step=20, padding_radius=25):
+
+def find_robot_path(
+    points_list,
+    connections,
+    robot_start,
+    target_pos,
+    radius,
+    width=600,
+    height=600,
+    grid_step=20,
+    padding_radius=25,
+):
     """
-    장애물 마스크 + 후보군 기반 A* 로봇 경로 탐색 (최적화 버전)
-    - 거리 적응형 grid_step / 탐색 영역
-    - 도착 시 target_pos를 바라보도록 방향 및 위치 보정
-    - 격자 단위(grid unit) 기반 계산
-    - Line-of-sight shortcut, 차단 셀 캐싱, dist^2 비교, octile heuristic,
-      후보 시도 횟수 상한 등으로 추가 최적화
+    장애물 안전거리 기반 2D 로봇 경로 탐색.
+
+    주요 기능:
+    - 원본 장애물 선분과 padding_radius를 이용한 충돌 판정
+    - 선분 전체에 대한 충돌 검사
+    - 적응형 격자 기반 A*
+    - 대각선 모서리 통과 방지
+    - 목표 주변의 안전한 대체 위치 탐색
+    - 직선 경로 우선 검사
+    - 도달 가능한 부분 경로 반환
 
     Returns:
-        path: [robot_start, waypoint1, ..., destination]
-              (실패 시 가장 가까운 지점까지의 경로, 완전 실패 시 [])
+        list[tuple[float, float]]:
+            시작점부터 경유점 및 도착점까지의 경로.
+            안전한 경로를 찾지 못하면 [] 반환.
     """
+    import math
+    import heapq
 
-    def dist(a, b):
-        return math.hypot(a[0] - b[0], a[1] - b[1])
+    SQRT2 = math.sqrt(2.0)
+    EPS = 1e-9
+
+    # --------------------------------------------------
+    # 1. 입력 검증
+    # --------------------------------------------------
+    if width <= 0 or height <= 0:
+        return []
+
+    if grid_step <= 0 or padding_radius < 0 or radius < 0:
+        return []
+
+    try:
+        start = (float(robot_start[0]), float(robot_start[1]))
+        target = (float(target_pos[0]), float(target_pos[1]))
+        width = float(width)
+        height = float(height)
+        grid_step = float(grid_step)
+        padding_radius = float(padding_radius)
+        radius = float(radius)
+    except (TypeError, ValueError, IndexError):
+        return []
+
+    if not all(math.isfinite(v) for v in (
+        *start, *target, width, height, grid_step,
+        padding_radius, radius
+    )):
+        return []
+
+    def in_bounds(p):
+        return (
+            0 <= p[0] <= width
+            and 0 <= p[1] <= height
+        )
+
+    if not in_bounds(start) or not in_bounds(target):
+        return []
 
     def dist2(a, b):
         dx = a[0] - b[0]
         dy = a[1] - b[1]
         return dx * dx + dy * dy
 
-    def point_segment_distance(p, a, b):
-        px, py = p
-        ax, ay = a
-        bx, by = b
-        dx, dy = bx - ax, by - ay
-        if dx == 0 and dy == 0:
-            return dist(p, a)
-        t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
-        t = max(0.0, min(1.0, t))
-        proj = (ax + t * dx, ay + t * dy)
-        return dist(p, proj)
+    def dist(a, b):
+        return math.sqrt(dist2(a, b))
 
-    # ---------- 1. 장애물 선분 구성 ----------
-    import math
-
+    # --------------------------------------------------
+    # 2. 원본 장애물 선분 구성
+    # --------------------------------------------------
+    # 입력 points_list는 절대 수정하지 않는다.
     segments = []
-    n_points = len(points_list)
 
     for conn in connections:
-        i, j = conn[0], conn[1]
-        if 0 <= i < n_points and 0 <= j < n_points:
-            p1 = points_list[i]
-            p2 = points_list[j]
-            
-            
-            # 2. 패딩(padding_radius)을 고려한 평행선(안전 영역) 추가
-            dx = p2[0] - p1[0]
-            dy = p2[1] - p1[1]
-            length = math.hypot(dx, dy)
-            
-            nnx = dx / length * padding_radius
-            nny = dy / length * padding_radius
-            
-            p1= (p1[0]-nnx, p1[0]-nny)
-            p2= (p2[0]+nnx, p2[1]+nny)
-            
-            # 1. 원본 선분 추가
-            segments.append((tuple(p1), tuple(p2)))
-            
-            if length > 1e-5:
-                # 단위 수직 벡터 계산 후 padding_radius 곱하기
-                nx = -dy / length * padding_radius
-                ny = dx / length * padding_radius
-                
-                # 좌측 평행선
-                p1_left = (p1[0] + nx, p1[1] + ny)
-                p2_left = (p2[0] + nx, p2[1] + ny)
-                segments.append((p1_left, p2_left))
-                
-                # 우측 평행선
-                p1_right = (p1[0] - nx, p1[1] - ny)
-                p2_right = (p2[0] - nx, p2[1] - ny)
-                segments.append((p1_right, p2_right))
-                
-                segments.append((p1_right, p1_left))
-                segments.append((p2_left, p2_right))
-                
-                points_list.append(p1_left)
-                points_list.append(p2_left)
-                points_list.append(p1_right)
-                points_list.append(p2_right)
-                
+        try:
+            i, j = int(conn[0]), int(conn[1])
 
-    # ---------- 2. 공간 해시(버킷) 인덱싱 ----------
-    bucket_size = max(grid_step * 2, padding_radius * 2)
-    seg_buckets = {}
+            if not (
+                0 <= i < len(points_list)
+                and 0 <= j < len(points_list)
+            ):
+                continue
 
-    def bucket_keys_for_segment(a, b):
-        min_x = min(a[0], b[0]) - padding_radius
-        max_x = max(a[0], b[0]) + padding_radius
-        min_y = min(a[1], b[1]) - padding_radius
-        max_y = max(a[1], b[1]) + padding_radius
-        kx0, kx1 = int(min_x // bucket_size), int(max_x // bucket_size)
-        ky0, ky1 = int(min_y // bucket_size), int(max_y // bucket_size)
-        return [(kx, ky) for kx in range(kx0, kx1 + 1) for ky in range(ky0, ky1 + 1)]
+            p1 = (
+                float(points_list[i][0]),
+                float(points_list[i][1]),
+            )
+            p2 = (
+                float(points_list[j][0]),
+                float(points_list[j][1]),
+            )
 
-    for seg in segments:
-        for key in bucket_keys_for_segment(*seg):
-            seg_buckets.setdefault(key, []).append(seg)
+            if not all(math.isfinite(v) for v in (*p1, *p2)):
+                continue
 
-    def nearby_segments(p):
-        kx, ky = int(p[0] // bucket_size), int(p[1] // bucket_size)
-        result = []
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                b = seg_buckets.get((kx + dx, ky + dy))
-                if b:
-                    result.extend(b)
-        return result
+            # 길이가 0인 선분도 점 장애물로 처리할 수 있다.
+            segments.append((p1, p2))
 
-    def raw_is_blocked(p, bounds):
-        min_x, min_y, max_x, max_y = bounds
-        if p[0] < min_x or p[0] > max_x or p[1] < min_y or p[1] > max_y:
+        except (TypeError, ValueError, IndexError):
+            continue
+
+    # --------------------------------------------------
+    # 3. 기하학적 충돌 판정
+    # --------------------------------------------------
+    def point_segment_distance(p, a, b):
+        """점 p와 선분 ab 사이의 최소 거리."""
+        dx = b[0] - a[0]
+        dy = b[1] - a[1]
+        length2 = dx * dx + dy * dy
+
+        if length2 <= EPS:
+            return dist(p, a)
+
+        t = (
+            (p[0] - a[0]) * dx
+            + (p[1] - a[1]) * dy
+        ) / length2
+
+        t = max(0.0, min(1.0, t))
+
+        projection = (
+            a[0] + t * dx,
+            a[1] + t * dy,
+        )
+
+        return dist(p, projection)
+
+    def orientation(a, b, c):
+        return (
+            (b[0] - a[0]) * (c[1] - a[1])
+            - (b[1] - a[1]) * (c[0] - a[0])
+        )
+
+    def segments_intersect(a, b, c, d):
+        """두 선분이 교차하거나 접하는지 검사."""
+        o1 = orientation(a, b, c)
+        o2 = orientation(a, b, d)
+        o3 = orientation(c, d, a)
+        o4 = orientation(c, d, b)
+
+        if (
+            ((o1 > EPS and o2 < -EPS)
+             or (o1 < -EPS and o2 > EPS))
+            and
+            ((o3 > EPS and o4 < -EPS)
+             or (o3 < -EPS and o4 > EPS))
+        ):
             return True
-        for seg in nearby_segments(p):
-            if point_segment_distance(p, seg[0], seg[1]) <= padding_radius:
-                return True
+
+        if abs(o1) <= EPS and point_segment_distance(c, a, b) <= EPS:
+            return True
+        if abs(o2) <= EPS and point_segment_distance(d, a, b) <= EPS:
+            return True
+        if abs(o3) <= EPS and point_segment_distance(a, c, d) <= EPS:
+            return True
+        if abs(o4) <= EPS and point_segment_distance(b, c, d) <= EPS:
+            return True
+
         return False
 
-    def is_blocked_unbounded(p):
-        if p[0] < 0 or p[0] > width or p[1] < 0 or p[1] > height:
+    def segment_segment_distance(a, b, c, d):
+        """두 선분 사이의 최소 거리."""
+        if segments_intersect(a, b, c, d):
+            return 0.0
+
+        return min(
+            point_segment_distance(a, c, d),
+            point_segment_distance(b, c, d),
+            point_segment_distance(c, a, b),
+            point_segment_distance(d, a, b),
+        )
+
+    def point_blocked(p):
+        """점 주변에 안전 반경을 확보할 수 없는지 검사."""
+        if not in_bounds(p):
             return True
-        for seg in nearby_segments(p):
-            if point_segment_distance(p, seg[0], seg[1]) <= padding_radius:
+
+        for a, b in segments:
+            if (
+                point_segment_distance(p, a, b)
+                <= padding_radius + EPS
+            ):
                 return True
+
         return False
 
-    # ---------- Step 1: Line-of-sight 체크 ----------
+    def segment_blocked(a, b):
+        """이동 선분 전체가 안전한지 검사."""
+        if not in_bounds(a) or not in_bounds(b):
+            return True
+
+        for c, d in segments:
+            if (
+                segment_segment_distance(a, b, c, d)
+                <= padding_radius + EPS
+            ):
+                return True
+
+        return False
+
     def line_of_sight_clear(a, b):
-        d = dist(a, b)
-        if d < 1e-6:
-            return True
-        step_len = max(padding_radius * 0.6, 1.0)
-        num_steps = min(200, max(2, int(d / step_len)))
-        dx = (b[0] - a[0]) / num_steps
-        dy = (b[1] - a[1]) / num_steps
-        for k in range(1, num_steps + 1):
-            p = (a[0] + dx * k, a[1] + dy * k)
-            if is_blocked_unbounded(p):
-                return False
-        return True
+        # 샘플링이 아닌 선분 전체의 최소 거리로 검사한다.
+        return not segment_blocked(a, b)
 
-    # ---------- 3. 후보군 선정 (반경 자동 확장 포함) ----------
-    def collect_candidates(r):
-        r2 = r * r
-        return [tuple(p) for p in points_list if dist2(p, target_pos) <= r2]
+    # 시작 위치가 이미 장애물 안전 영역 안이라면
+    # 안전한 경로를 보장할 수 없으므로 실패 처리한다.
+    if point_blocked(start):
+        return []
 
-    candidates = collect_candidates(radius)
-    cur_radius = radius
-    expand_tries = 0
-    while not candidates and expand_tries < 6:
-        cur_radius *= 1.6
-        candidates = collect_candidates(cur_radius)
-        expand_tries += 1
-    if not candidates:
-        candidates = [tuple(target_pos)]
-    candidates.sort(key=lambda p: dist2(robot_start, p))  # Step 3: sqrt 없이 정렬
-
-    # ---------- 4. 거리 적응형 grid_step 및 탐색 바운딩 박스 계산 ----------
-    farthest_candidate_dist = max(dist(robot_start, c) for c in candidates)
-    travel_span = max(farthest_candidate_dist, 1.0)
+    # --------------------------------------------------
+    # 4. 적응형 격자 설정
+    # --------------------------------------------------
+    travel_span = max(dist(start, target), 1.0)
 
     min_cells = 25
     max_cells = 120
 
-    adaptive_step = grid_step
-    est_cells = travel_span / adaptive_step
-    if est_cells < min_cells:
-        adaptive_step = max(travel_span / min_cells, grid_step * 0.25)
-    elif est_cells > max_cells:
-        adaptive_step = min(travel_span / max_cells, grid_step * 8)
+    estimated_cells = travel_span / grid_step
 
-    grid_step = max(adaptive_step, 1.0)
+    if estimated_cells < min_cells:
+        grid_step = max(
+            travel_span / min_cells,
+            grid_step * 0.25,
+        )
+    elif estimated_cells > max_cells:
+        grid_step = min(
+            travel_span / max_cells,
+            grid_step * 8.0,
+        )
 
-    margin = max(padding_radius * 3, grid_step * 5)
-    xs = [robot_start[0]] + [c[0] for c in candidates]
-    ys = [robot_start[1]] + [c[1] for c in candidates]
-    region_min_x = max(0, min(xs) - margin)
-    region_max_x = min(width, max(xs) + margin)
-    region_min_y = max(0, min(ys) - margin)
-    region_max_y = min(height, max(ys) + margin)
-    bounds = (region_min_x, region_min_y, region_max_x, region_max_y)
+    grid_step = max(grid_step, 1.0)
 
-    cols = max(1, int((region_max_x - region_min_x) // grid_step) + 1)
-    rows = max(1, int((region_max_y - region_min_y) // grid_step) + 1)
-
-    # ---------- Step 2: 차단 셀 캐시 ----------
-    blocked_cache = {}
+    # 지도 전체를 격자로 사용해 좌표 변환을 단순화한다.
+    cols = int(math.floor(width / grid_step)) + 1
+    rows = int(math.floor(height / grid_step)) + 1
 
     def grid_coord(node):
-        return (region_min_x + node[0] * grid_step, region_min_y + node[1] * grid_step)
+        return (
+            node[0] * grid_step,
+            node[1] * grid_step,
+        )
+
+    # --------------------------------------------------
+    # 5. 차단 격자 캐시
+    # --------------------------------------------------
+    blocked_cache = {}
 
     def is_blocked_node(node):
-        cached = blocked_cache.get(node)
-        if cached is not None:
-            return cached
-        result = raw_is_blocked(grid_coord(node), bounds)
-        blocked_cache[node] = result
-        return result
+        if node not in blocked_cache:
+            blocked_cache[node] = point_blocked(grid_coord(node))
 
-    def nearest_free_node(p):
-        base_c = round((p[0] - region_min_x) / grid_step)
-        base_r = round((p[1] - region_min_y) / grid_step)
+        return blocked_cache[node]
+
+    def nearest_free_node(p, require_connection=False):
+        """
+        주변 링을 탐색해 가장 가까운 자유 격자점을 찾는다.
+
+        require_connection=True이면 입력 좌표에서 해당
+        격자점까지의 이동 구간도 안전해야 한다.
+        """
+        base_c = round(p[0] / grid_step)
+        base_r = round(p[1] / grid_step)
+
+        base_c = max(0, min(cols - 1, base_c))
+        base_r = max(0, min(rows - 1, base_r))
+
         max_ring = max(cols, rows)
-        for ring in range(0, max_ring + 1):
-            best, best_d2 = None, None
+
+        for ring in range(max_ring + 1):
+            best_node = None
+            best_d2 = math.inf
+
             for dc in range(-ring, ring + 1):
                 for dr in range(-ring, ring + 1):
                     if max(abs(dc), abs(dr)) != ring:
                         continue
-                    c, r = base_c + dc, base_r + dr
-                    if 0 <= c < cols and 0 <= r < rows:
-                        node = (c, r)
-                        if not is_blocked_node(node):
-                            coord = grid_coord(node)
-                            d2 = dist2(p, coord)  # Step 3
-                            if best_d2 is None or d2 < best_d2:
-                                best_d2, best = d2, node
-            if best is not None:
-                return best
+
+                    c = base_c + dc
+                    r = base_r + dr
+
+                    if not (0 <= c < cols and 0 <= r < rows):
+                        continue
+
+                    node = (c, r)
+
+                    if is_blocked_node(node):
+                        continue
+
+                    coord = grid_coord(node)
+
+                    if (
+                        require_connection
+                        and segment_blocked(p, coord)
+                    ):
+                        continue
+
+                    d2 = dist2(p, coord)
+
+                    if d2 < best_d2:
+                        best_d2 = d2
+                        best_node = node
+
+            if best_node is not None:
+                return best_node
+
         return None
 
-    neighbor_offsets = [(-1, 0), (1, 0), (0, -1), (0, 1),
-                         (-1, -1), (-1, 1), (1, -1), (1, 1)]
+    start_node = nearest_free_node(
+        start,
+        require_connection=True,
+    )
+
+    if start_node is None:
+        return []
+
+    # --------------------------------------------------
+    # 6. 8방향 이웃 및 이동 비용
+    # --------------------------------------------------
+    neighbor_offsets = [
+        (-1, 0), (1, 0), (0, -1), (0, 1),
+        (-1, -1), (-1, 1), (1, -1), (1, 1),
+    ]
 
     def neighbors(node):
         c, r = node
+        current_pos = grid_coord(node)
+
         for dc, dr in neighbor_offsets:
             nc, nr = c + dc, r + dr
-            if 0 <= nc < cols and 0 <= nr < rows:
-                nb = (nc, nr)
-                if not is_blocked_node(nb):  # Step 2: 캐시 사용
-                    cost = (_SQRT2 if dc != 0 and dr != 0 else 1.0) * grid_step
-                    yield nb, cost
 
-    def heuristic(node, goal_node):
-        # Step 4: octile distance, 격자 인덱스 기준 (grid_coord 변환 없이 저비용)
-        dc = abs(node[0] - goal_node[0])
-        dr = abs(node[1] - goal_node[1])
-        lo, hi = (dc, dr) if dc < dr else (dr, dc)
-        return (hi - lo + _SQRT2 * lo) * grid_step
+            if not (0 <= nc < cols and 0 <= nr < rows):
+                continue
 
-    # ---------- A* ----------
-    def astar(start_node, goal_node):
-        open_heap = [(heuristic(start_node, goal_node), 0.0, start_node)]
+            nb = (nc, nr)
+
+            if is_blocked_node(nb):
+                continue
+
+            next_pos = grid_coord(nb)
+
+            # 노드뿐 아니라 실제 이동 선분도 검사한다.
+            if segment_blocked(current_pos, next_pos):
+                continue
+
+            # 대각선으로 두 장애물 모서리 사이를 통과하지 않는다.
+            if dc != 0 and dr != 0:
+                side1 = (c + dc, r)
+                side2 = (c, r + dr)
+
+                if (
+                    is_blocked_node(side1)
+                    or is_blocked_node(side2)
+                ):
+                    continue
+
+                if (
+                    segment_blocked(current_pos, grid_coord(side1))
+                    or segment_blocked(current_pos, grid_coord(side2))
+                ):
+                    continue
+
+            cost = grid_step * (
+                SQRT2 if dc != 0 and dr != 0 else 1.0
+            )
+
+            yield nb, cost
+
+    def heuristic(node, goal):
+        dc = abs(node[0] - goal[0])
+        dr = abs(node[1] - goal[1])
+
+        lo = min(dc, dr)
+        hi = max(dc, dr)
+
+        return grid_step * (
+            hi - lo + SQRT2 * lo
+        )
+
+    # --------------------------------------------------
+    # 7. A* 및 부분 경로 복원
+    # --------------------------------------------------
+    def astar(start_n, goal_n):
+        open_heap = [
+            (heuristic(start_n, goal_n), 0.0, start_n)
+        ]
+
         came_from = {}
-        g_score = {start_node: 0.0}
+        g_score = {start_n: 0.0}
         closed = set()
-        best_node, best_h = start_node, heuristic(start_node, goal_node)
+
+        best_node = start_n
+        best_h = heuristic(start_n, goal_n)
 
         while open_heap:
-            f, g, current = heapq.heappop(open_heap)
+            _, g, current = heapq.heappop(open_heap)
+
             if current in closed:
                 continue
+
+            # 오래된 우선순위 큐 항목은 무시한다.
+            if g > g_score.get(current, math.inf) + EPS:
+                continue
+
             closed.add(current)
 
-            h = heuristic(current, goal_node)
-            if h < best_h:
-                best_h, best_node = h, current
+            h = heuristic(current, goal_n)
 
-            if current == goal_node:
-                path = [current]
-                while current in came_from:
-                    current = came_from[current]
-                    path.append(current)
-                path.reverse()
-                return path, True
+            if h < best_h:
+                best_h = h
+                best_node = current
+
+            if current == goal_n:
+                best_node = current
+                success = True
+                break
 
             for nb, cost in neighbors(current):
                 if nb in closed:
                     continue
+
                 tentative_g = g + cost
+
                 if tentative_g < g_score.get(nb, math.inf):
                     g_score[nb] = tentative_g
                     came_from[nb] = current
-                    heapq.heappush(open_heap, (tentative_g + heuristic(nb, goal_node), tentative_g, nb))
+
+                    heapq.heappush(
+                        open_heap,
+                        (
+                            tentative_g + heuristic(nb, goal_n),
+                            tentative_g,
+                            nb,
+                        ),
+                    )
+        else:
+            success = False
 
         path = [best_node]
-        cur = best_node
-        while cur in came_from:
-            cur = came_from[cur]
-            path.append(cur)
+        current = best_node
+
+        while current in came_from:
+            current = came_from[current]
+            path.append(current)
+
         path.reverse()
-        return path, False
 
-    # ---------- 도착 시 target_pos 방향으로 전진 ----------
-    def march_toward_target(from_point, to_point):
-        total = dist(from_point, to_point)
-        if total < 1e-6:
-            return from_point
-        num_steps = min(40, max(4, int(total / max(grid_step, 1.0))))
-        dx = (to_point[0] - from_point[0]) / num_steps
-        dy = (to_point[1] - from_point[1]) / num_steps
+        return path, success
 
-        last_valid = from_point
-        cur = from_point
-        for _ in range(num_steps):
-            nxt = (cur[0] + dx, cur[1] + dy)
-            if is_blocked_unbounded(nxt):
-                break
-            last_valid = nxt
-            cur = nxt
-        return last_valid
+    # --------------------------------------------------
+    # 8. 목표 주변의 안전한 후보점 생성
+    # --------------------------------------------------
+    # 기존 코드처럼 장애물 꼭짓점을 목표 후보로 삼지 않는다.
+    # 목표 자체가 막혀 있다면 주변의 실제 자유 격자점을 찾는다.
+    candidates = []
+    seen = set()
 
-    start_node = nearest_free_node(robot_start)
-    if start_node is None:
+    def add_candidate(node):
+        if node is None or node in seen:
+            return
+
+        if is_blocked_node(node):
+            return
+
+        pos = grid_coord(node)
+
+        if not in_bounds(pos):
+            return
+
+        seen.add(node)
+        candidates.append(node)
+
+    target_node = nearest_free_node(target)
+
+    if target_node is not None:
+        target_grid_pos = grid_coord(target_node)
+
+        if line_of_sight_clear(target, target_grid_pos):
+            add_candidate(target_node)
+
+    max_radius = max(
+        radius,
+        padding_radius + grid_step,
+        1.0,
+    )
+
+    # 목표 주변을 여러 반경과 각도로 샘플링한다.
+    # 기존 코드의 최대 6회 반경 확장 정책을 유지한다.
+    for expansion in range(7):
+        ring_radius = max_radius * (1.6 ** expansion)
+
+        for i in range(24):
+            angle = 2.0 * math.pi * i / 24
+
+            sample = (
+                target[0] + math.cos(angle) * ring_radius,
+                target[1] + math.sin(angle) * ring_radius,
+            )
+
+            if not in_bounds(sample):
+                continue
+
+            node = nearest_free_node(sample)
+
+            if node is None:
+                continue
+
+            pos = grid_coord(node)
+
+            if dist(pos, target) <= ring_radius + grid_step:
+                add_candidate(node)
+
+        if len(candidates) >= 8:
+            break
+
+    # 목표와 가까운 후보부터 시도한다.
+    candidates.sort(key=lambda n: dist2(grid_coord(n), target))
+
+    if not candidates:
         return []
 
-    best_fallback_path = None
-    best_fallback_dist2 = None
+    # --------------------------------------------------
+    # 9. 후보별 직선 검사 및 A*
+    # --------------------------------------------------
+    best_fallback = None
+    best_fallback_d2 = math.inf
 
-    # Step 5: 후보 시도 횟수 상한
-    max_candidate_tries = min(len(candidates), 8)
+    for goal_node in candidates[:8]:
+        goal_pos = grid_coord(goal_node)
 
-    for cand in candidates[:max_candidate_tries]:
-        # Step 1: 직선 경로가 뚫려 있으면 A* 생략
-        if line_of_sight_clear(robot_start, cand):
-            final_point = march_toward_target(cand, tuple(target_pos))
-            result = [tuple(robot_start), tuple(cand)]
-            if dist2(final_point, cand) > 1e-6:
-                result.append(final_point)
-            return result
+        # 직선 이동이 안전하다면 A*를 생략한다.
+        if line_of_sight_clear(start, goal_pos):
+            return [start, goal_pos] if dist2(start, goal_pos) > EPS else [start]
 
-        goal_node = nearest_free_node(cand)
-        if goal_node is None:
+        # 시작 격자점과 실제 시작점 사이도 안전해야 한다.
+        if segment_blocked(start, grid_coord(start_node)):
             continue
 
         node_path, success = astar(start_node, goal_node)
+
+        if not node_path:
+            continue
+
         world_path = [grid_coord(n) for n in node_path]
 
+        # 실제 시작점에서 첫 격자점까지의 구간을 검증한다.
+        if segment_blocked(start, world_path[0]):
+            continue
+
+        result = [start]
+
+        if dist2(start, world_path[0]) > EPS:
+            result.append(world_path[0])
+
+        for p in world_path[1:]:
+            if dist2(result[-1], p) > EPS:
+                result.append(p)
+
+        # 목표 좌표 자체까지 안전하게 연결할 수 있으면 추가한다.
+        if (
+            success
+            and dist2(world_path[-1], target) > EPS
+            and line_of_sight_clear(world_path[-1], target)
+        ):
+            result.append(target)
+
+        # 최종 경로의 모든 구간을 다시 검사한다.
+        valid = all(
+            not segment_blocked(result[i], result[i + 1])
+            for i in range(len(result) - 1)
+        )
+
+        if not valid:
+            continue
+
         if success:
-            final_point = march_toward_target(cand, tuple(target_pos))
-            result = [tuple(robot_start)] + world_path[1:-1] + [tuple(cand)]
-            if dist2(final_point, cand) > 1e-6:
-                result.append(final_point)
             return result
 
-        end_d2 = dist2(world_path[-1], cand)
-        if best_fallback_dist2 is None or end_d2 < best_fallback_dist2:
-            best_fallback_dist2 = end_d2
-            final_point = march_toward_target(world_path[-1], tuple(target_pos))
-            path_candidate = [tuple(robot_start)] + world_path[1:]
-            if dist2(final_point, world_path[-1]) > 1e-6:
-                path_candidate.append(final_point)
-            best_fallback_path = path_candidate
+        # 부분 경로 중 목표에 가장 가까운 결과를 보관한다.
+        end_d2 = dist2(result[-1], target)
 
-    return best_fallback_path if best_fallback_path else []
+        if end_d2 < best_fallback_d2:
+            best_fallback_d2 = end_d2
+            best_fallback = result
+
+    return best_fallback if best_fallback is not None else []
+
 
 import cv2
 import numpy as np
@@ -848,6 +1095,179 @@ def get_transformed_screen_vertices(matrix, screen_width, screen_height):
         "min_max_limits": (min_x, min_y, max_x, max_y) # (min_x, min_y, max_x, max_y)
     }
 
+
+
+import math
+import matplotlib.pyplot as plt
+
+
+def display_robot_path(
+    path,
+    points_list=None,
+    connections=None,
+    width=600,
+    height=600,
+    padding=30,
+    image_size=(10, 8),
+    save_path=None,
+    show_grid=True,
+):
+    """
+    find_robot_path()의 반환 경로를 자동 크기 조정하여 표시한다.
+
+    Args:
+        path: [(x, y), ...] 형태의 경로
+        points_list: 장애물 꼭짓점 목록 (선택)
+        connections: 장애물 연결 목록 (선택)
+        width, height: 원본 지도 크기
+        padding: 이미지 가장자리 여백 (좌표 단위)
+        image_size: 출력 이미지 크기 (인치)
+        save_path: 저장할 파일 경로. None이면 저장하지 않음
+        show_grid: 격자 표시 여부
+
+    Returns:
+        fig, ax: matplotlib Figure와 Axes
+    """
+
+    if not path:
+        print("표시할 경로가 없습니다.")
+        return None, None
+
+    path = [(float(p[0]), float(p[1])) for p in path]
+
+    if not all(
+        math.isfinite(v)
+        for p in path
+        for v in p
+    ):
+        raise ValueError("경로에 유효하지 않은 좌표가 포함되어 있습니다.")
+
+    fig, ax = plt.subplots(figsize=image_size)
+
+    # 1. 장애물 표시
+    if points_list is not None and connections is not None:
+        for conn in connections:
+            i, j = int(conn[0]), int(conn[1])
+
+            if 0 <= i < len(points_list) and 0 <= j < len(points_list):
+                p1 = points_list[i]
+                p2 = points_list[j]
+
+                ax.plot(
+                    [p1[0], p2[0]],
+                    [p1[1], p2[1]],
+                    color="black",
+                    linewidth=2,
+                    zorder=1,
+                )
+
+    # 2. 전체 경로 표시
+    xs = [p[0] for p in path]
+    ys = [p[1] for p in path]
+
+    ax.plot(
+        xs,
+        ys,
+        color="tab:blue",
+        linewidth=2,
+        marker="o",
+        markersize=5,
+        label="Robot path",
+        zorder=3,
+    )
+
+    # 시작점
+    ax.scatter(
+        xs[0], ys[0],
+        color="tab:green",
+        s=100,
+        marker="o",
+        label="Start",
+        zorder=4,
+    )
+
+    # 도착점
+    ax.scatter(
+        xs[-1], ys[-1],
+        color="tab:red",
+        s=100,
+        marker="X",
+        label="End",
+        zorder=4,
+    )
+
+    # 3. 경유점 번호 표시
+    for i, (x, y) in enumerate(path):
+        ax.annotate(
+            str(i),
+            (x, y),
+            xytext=(5, 5),
+            textcoords="offset points",
+            fontsize=8,
+        )
+
+    # 4. 모든 경로와 장애물을 포함하는 표시 범위 계산
+    all_x = xs[:]
+    all_y = ys[:]
+
+    if points_list:
+        for p in points_list:
+            all_x.append(float(p[0]))
+            all_y.append(float(p[1]))
+
+    min_x = min(all_x)
+    max_x = max(all_x)
+    min_y = min(all_y)
+    max_y = max(all_y)
+
+    # 지도 범위도 포함하되, 전체 지도가 너무 크면
+    # 경로 주변을 중심으로 자동 확대한다.
+    span_x = max_x - min_x
+    span_y = max_y - min_y
+
+    padding_x = max(padding, span_x * 0.05, 1.0)
+    padding_y = max(padding, span_y * 0.05, 1.0)
+
+    min_x -= padding_x
+    max_x += padding_x
+    min_y -= padding_y
+    max_y += padding_y
+
+    # 5. 이미지 비율에 맞춰 전체 경로가 잘리지 않도록 설정
+    aspect = image_size[0] / image_size[1]
+
+    view_w = max_x - min_x
+    view_h = max_y - min_y
+
+    if view_w / view_h < aspect:
+        extra = (view_h * aspect - view_w) / 2
+        min_x -= extra
+        max_x += extra
+    else:
+        extra = (view_w / aspect - view_h) / 2
+        min_y -= extra
+        max_y += extra
+
+    ax.set_xlim(min_x, max_x)
+    ax.set_ylim(min_y, max_y)
+
+    # 실제 좌표의 x, y 비율을 동일하게 유지한다.
+    ax.set_aspect("equal", adjustable="box")
+
+    if show_grid:
+        ax.grid(True, linestyle="--", alpha=0.3)
+
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
+    ax.set_title("Robot Path Visualization")
+    ax.legend()
+    fig.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+
+
+    return fig, ax
 
 
 
