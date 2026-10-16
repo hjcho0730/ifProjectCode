@@ -6,13 +6,13 @@ import numpy as np
 
 from matrixCal import *
 from lineMade import *
-
+aaaaa= 0
 carMovable= True
 if carMovable:
     import serial, time
 
     # 아까 확인한 내 컴퓨터의 COM 번호로 꼭 바꿔주세요! (예: 'COM5')
-    bluetooth_port = 'COM8' 
+    bluetooth_port = 'COM5' 
 
     print("블루투스 자동차에 연결하는 중...")
     # 자동차와 블루투스 전화 연결!
@@ -30,8 +30,8 @@ if carMovable:
     def move():
         car.write(b'go\n')
 
-current_path = os.getcwd()
-file_path = os.path.join(current_path, "my_list.txt")
+#current_path = os.getcwd()
+#file_path = os.path.join(current_path, "my_list.txt")
 
 def trimmed_mean(values):
     # 프레임이 2개 이하일 때는 이상치 제거 없이 전체 평균 반환
@@ -126,7 +126,7 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 # 웹캠을 열어 실시간으로 영상을 가져옵니다.
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 matrix= None  # 2D -> 3D
@@ -147,7 +147,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         if not success:
             print("카메라로부터 영상을 가져올 수 없습니다.")
             continue
-        
         suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=1)
         
         RobotDetected=False
@@ -238,22 +237,27 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         
         d3= (0,0)
         if len(bodyPoints) != 0:
-            ###############옆구리 계산 및 표시 ##################
-            arr= [bodyPoints[11], bodyPoints[23]]
-            d= (int(arr[0][0]+arr[1][0])//2, int(arr[0][1]+arr[1][1])//2)
-            cv2.circle(frame, d, 10, (255, 125, 0), -1)
-            ##################################################
             
             if matrix is not None and RobotDetected:
                 tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
                 d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
                 d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
-                d3= ((d1[0]+d2[0]*2) / 3, (d1[1]+d2[1]*2) / 3)
+                d3= ((d1[0]*2+d2[0]) / 3, (d1[1]*2+d2[1]) / 3)
+                
+                cv2.circle(frame, tuple(map(int, transform_to_screen(matrix_inv, d3))), 10, (255, 125, 0), -1)
                 
                 pos= get3Dpos(matrix, center)
                 
-                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 250, 200) #robotPos
+                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 430, padding_radius=250) #robotPos
                 print(route)
+                
+                display_robot_path(
+                    route,
+                    points_list=tmpPList,
+                    connections=mp_pose.POSE_CONNECTIONS,
+                    save_path="robot_path.png",
+                    image_size=(12, 9),
+                )
                 
                 
                 #print(route)
@@ -261,25 +265,34 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         if carMovable:
             if not (matrix is not None):
                 stop()
+                print("Mat stop")
             else:
                 if not RobotDetected:
+                    aaaaa += 1
+                else:
+                    aaaaa=0
+                if aaaaa > 2:
                     stop()
+                    print("Detect stop")
                 else:
                     if len(bodyPoints) == 0:
                         stop()
+                        print("no body stop")
                     else:
-                        if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 150:
+                        if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 0:
                             stop()
+                            print("close stop")
                         else:
                             if len(route) <= 1:
                                 stop()
+                                print("no routeqq stop")
                             else:
                                 direction, angle= calculate_rotation(pos, forwardPos, route[1])
-                                print(direction, angle)
                                 
-                                if angle > 5:
+                                if angle > 15:
                                     turn(direction)
                                 else:
+                                    print('f', angle)
                                     move()
         
 
@@ -307,6 +320,3 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
-
-
-
