@@ -11,3 +11,5 @@ pip install -r requirements.txt
 pip freeze '> requirements.txt
 <br>
 ##############
+
+winget install Python.Python.3.10 --version 3.10.11 --no-upgrade --force
