@@ -126,7 +126,7 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 # 웹캠을 열어 실시간으로 영상을 가져옵니다.
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 matrix= None  # 2D -> 3D
@@ -248,7 +248,27 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 
                 pos= get3Dpos(matrix, center)
                 
-                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 430, padding_radius=250) #robotPos
+                extra_padding = {
+                    frozenset({6, 8}): 50,
+                    frozenset({4, 5}): 50,
+                    frozenset({5, 6}): 50,
+                    frozenset({0, 4}): 50,
+                    frozenset({0, 1}): 50,
+                    frozenset({1, 2}): 50,
+                    frozenset({2, 3}): 50,
+                    frozenset({3, 7}): 50,
+                    frozenset({9, 10}): 50,
+                    #frozenset({11, 13}): 50,
+                    #frozenset({13, 15}): 50,
+                    #frozenset({12, 14}): 50,
+                    #frozenset({14, 16}): 50,
+                    #frozenset({23, 25}): 100,
+                    #frozenset({25, 27}): 100,
+                    #frozenset({24, 26}): 100,
+                    #frozenset({26, 28}): 100,
+                }
+                
+                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 540, padding_radius=360, extra_padding_by_connection=extra_padding) #robotPos
                 print(route)
                 
                 display_robot_path(
@@ -279,9 +299,9 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                         stop()
                         print("no body stop")
                     else:
-                        if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 0:
+                        if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 500:
                             stop()
-                            print("close stop")
+                            print("close stop", np.hypot(pos[0]-d3[0], pos[1]-d3[1]))
                         else:
                             if len(route) <= 1:
                                 stop()
@@ -291,6 +311,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                                 
                                 if angle > 15:
                                     turn(direction)
+                                    print('angle', angle)
                                 else:
                                     print('f', angle)
                                     move()
@@ -313,6 +334,8 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         # 'q'를 누르면 종료
         if cv2.waitKey(1) == ord('q'):
             break
+        
+        time.sleep(0.2)
 
 # 웹캠을 닫고 모든 창을 닫습니다.
 cap.release()
@@ -320,3 +343,4 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
+
