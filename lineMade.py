@@ -791,7 +791,7 @@ def calculate_rotation(pos, forward_pos, target_pos):
     
     # 예외 처리: 위치가 같아 방향을 정의할 수 없는 경우
     if mag_f == 0 or mag_t == 0:
-        return 'NONE', 0.0
+        return 'CW', 0.0
     
     # 4. 내적(Dot Product)을 이용한 각도 계산
     dot_product = v_f_x * v_t_x + v_f_y * v_t_y
@@ -879,13 +879,24 @@ def draw_robot_path(
 import heapq
 import math
 
-def find_robot_path(points_list, connections, robot_start, target_pos, radius, padding_radius=25):
+
+def find_robot_path(
+    points_list,
+    connections,
+    robot_start,
+    target_pos,
+    radius,
+    padding_radius=25,
+    extra_padding_by_connection=None,
+):
     """
-    열린 연속 공간(Continuous Space) 기반 최적 경로 탐색
-    - width, height 제약 없음
-    - 선분 장애물 주변에 padding_radius 만큼의 다각형(Capsule 형태) 안전 영역 생성
-    - 시가지 그래프(Visibility Graph) + A* 알고리즘으로 최적/안전 경로 탐색
-    - target_pos와 radius 거리 이내의 지점 중 가장 접근하기 좋은 도착점 선택
+    패딩이 적용된 연속 공간 기반 경로 탐색.
+
+    - 장애물 선분 주변 padding_radius만큼 안전 영역 적용
+    - Visibility Graph + A* 기반 경로 탐색
+    - 잠재 도착지를 출발점에서 가까운 순서로 탐색
+    - 도달 가능한 가장 가까운 후보를 찾으면 조기 종료
+    - 경로 스무딩을 통해 불필요한 경유점 제거
     """
 
     def dist(a, b):
@@ -898,162 +909,258 @@ def find_robot_path(points_list, connections, robot_start, target_pos, radius, p
         px, py = p
         ax, ay = a
         bx, by = b
+
         dx, dy = bx - ax, by - ay
-        if dx == 0 and dy == 0:
+        length2 = dx * dx + dy * dy
+
+        if length2 < 1e-12:
             return dist(p, a)
-        t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+
+        t = ((px - ax) * dx + (py - ay) * dy) / length2
         t = max(0.0, min(1.0, t))
+
         proj = (ax + t * dx, ay + t * dy)
         return dist(p, proj)
 
     robot_start = tuple(robot_start)
     target_pos = tuple(target_pos)
 
-    # ---------- 1. 장애물 선분 및 패딩 다각형(Capsule Body) 생성 ----------
+    # 1. 장애물 및 우회 노드 생성
     obstacle_capsules = []
-    nav_nodes = set()
-    nav_nodes.add(robot_start)
+    nav_nodes = {robot_start}
+
+    if extra_padding_by_connection is None:
+        extra_padding_by_connection = {}
 
     n_points = len(points_list)
+
     for conn in connections:
-        i, j = conn[0], conn[1]
-        if 0 <= i < n_points and 0 <= j < n_points:
-            p1 = tuple(points_list[i])
-            p2 = tuple(points_list[j])
-            
-            dx = p2[0] - p1[0]
-            dy = p2[1] - p1[1]
-            length = math.hypot(dx, dy)
-            if length < 1e-6:
-                continue
+        # connections의 원소는 frozenset({i, j})
+        if len(conn) != 2:
+            continue
 
-            # 단위 수직/수평 벡터
-            ux, uy = dx / length, dy / length
-            nx, ny = -uy * padding_radius, ux * padding_radius
-            px, py = ux * padding_radius, uy * padding_radius
+        i, j = tuple(conn)
 
-            # 장애물 선분을 두러싸는 캡슐 형태의 4개 코너 포인트 (안전 노드)
-            c1 = (p1[0] - px + nx, p1[1] - py + ny)
-            c2 = (p2[0] + px + nx, p2[1] + py + ny)
-            c3 = (p2[0] + px - nx, p2[1] + py - ny)
-            c4 = (p1[0] - px - nx, p1[1] - py - ny)
+        if not (0 <= i < n_points and 0 <= j < n_points):
+            continue
 
-            obstacle_capsules.append({
-                'p1': p1, 'p2': p2,
-                'poly': [c1, c2, c3, c4]
-            })
+        p1 = tuple(points_list[i])
+        p2 = tuple(points_list[j])
 
-            # 우회 경로로 사용할 길찾기 노드 후보 추가
-            nav_nodes.update([c1, c2, c3, c4])
+        dx = p2[0] - p1[0]
+        dy = p2[1] - p1[1]
+        length = math.hypot(dx, dy)
 
-    # ---------- 2. 위치 충돌 체크 (안전 영역 내부인지) ----------
+        if length < 1e-6:
+            continue
+
+        # 해당 장애물에 적용할 최종 패딩
+        connection_key = frozenset({i, j})
+        extra_padding = extra_padding_by_connection.get(
+            connection_key, 0
+        )
+        obstacle_padding = max(
+            0, padding_radius + extra_padding
+        )
+
+        ux, uy = dx / length, dy / length
+
+        nx = -uy * obstacle_padding
+        ny = ux * obstacle_padding
+        px = ux * obstacle_padding
+        py = uy * obstacle_padding
+
+        c1 = (
+            p1[0] - px + nx,
+            p1[1] - py + ny
+        )
+        c2 = (
+            p2[0] + px + nx,
+            p2[1] + py + ny
+        )
+        c3 = (
+            p2[0] + px - nx,
+            p2[1] + py - ny
+        )
+        c4 = (
+            p1[0] - px - nx,
+            p1[1] - py - ny
+        )
+
+        obstacle_capsules.append({
+            "p1": p1,
+            "p2": p2,
+            "padding": obstacle_padding,
+            "connection": connection_key,
+        })
+
+        nav_nodes.update([c1, c2, c3, c4])
+
+    # 2. 안전 영역 충돌 검사
     def is_blocked(p):
         for cap in obstacle_capsules:
-            if point_segment_distance(p, cap['p1'], cap['p2']) < padding_radius - 1e-5:
+            if point_segment_distance(
+                p, cap["p1"], cap["p2"]
+            ) < cap["padding"] - 1e-5:
                 return True
+
         return False
 
-    # ---------- 3. Line-of-Sight (두 점 사이 직진 가능 여부) ----------
+    # 3. 두 점 사이 직선 이동 가능 여부 검사
     def is_line_clear(a, b):
         d = dist(a, b)
+
         if d < 1e-6:
-            return True
-        
-        # 선분-선분 교차 및 선분-장애물 거리를 세밀하게 체크
-        steps = max(2, int(d / (padding_radius * 0.5)))
+            return not is_blocked(a)
+
+        # 간격이 지나치게 커지지 않도록 샘플링
+        sample_spacing = max(
+            1.0,
+            padding_radius * 0.25
+        )
+        steps = max(2, math.ceil(d / sample_spacing))
+
         dx = (b[0] - a[0]) / steps
         dy = (b[1] - a[1]) / steps
 
         for k in range(steps + 1):
-            chk = (a[0] + dx * k, a[1] + dy * k)
+            chk = (
+                a[0] + dx * k,
+                a[1] + dy * k
+            )
+
             if is_blocked(chk):
                 return False
+
         return True
 
-    # ---------- 4. 최적의 도착 지점 후보 선정 ----------
-    # target_pos를 중심점으로 반경 radius 이내의 유효한 도착점 선정
+    # 4. 잠재 도착지 생성
     target_candidates = []
-    
-    # Target 자체 직진 시도
+
     if not is_blocked(target_pos):
         target_candidates.append(target_pos)
 
-    # Target 주위 원형 샘플링 (경계선 접근 지점들)
     num_samples = 12
+
     for k in range(num_samples):
         angle = 2 * math.pi * k / num_samples
-        cand = (target_pos[0] + radius * math.cos(angle), 
-                target_pos[1] + radius * math.sin(angle))
+
+        cand = (
+            target_pos[0] + radius * math.cos(angle),
+            target_pos[1] + radius * math.sin(angle)
+        )
+
         if not is_blocked(cand):
             target_candidates.append(cand)
 
+    # 후보가 없으면 원래 목표점을 마지막 대안으로 사용
     if not target_candidates:
-        # radius 이내에 유효한 점이 없으면 target_pos와 가장 가까운 보정점 찾기
         target_candidates = [target_pos]
 
-    # ---------- 5. A* 길찾기 (Visibility Graph 기반) ----------
-    # 유효한 그래프 노드만 필터링
-    valid_nav_nodes = [n for n in nav_nodes if not is_blocked(n)]
+    # 중복 후보 제거
+    target_candidates = list(dict.fromkeys(target_candidates))
+
+    # 5. 유효한 우회 노드만 유지
+    valid_nav_nodes = [
+        node for node in nav_nodes
+        if not is_blocked(node)
+    ]
 
     def solve_astar(start, goal):
-        nodes = valid_nav_nodes + [goal] if goal not in valid_nav_nodes else valid_nav_nodes
-        
-        # 출발지에서 direct line-of-sight 체크
+        if is_blocked(start) or is_blocked(goal):
+            return None, math.inf
+
         if is_line_clear(start, goal):
             return [start, goal], dist(start, goal)
 
-        open_set = [(dist(start, goal), 0.0, start, [start])]
+        nodes = list(valid_nav_nodes)
+
+        if goal not in nodes:
+            nodes.append(goal)
+
+        open_set = [
+            (dist(start, goal), 0.0, start, [start])
+        ]
+
         visited = {}
 
         while open_set:
             f, g, curr, path = heapq.heappop(open_set)
 
-            if curr in visited and visited[curr] <= g:
+            if g >= visited.get(curr, math.inf):
                 continue
+
             visited[curr] = g
 
-            if dist2(curr, goal) < 1e-5:
+            if curr == goal:
                 return path, g
 
-            # 이웃 노드 확장 (Line of sight가 확보된 노드로만 이동)
             for nxt in nodes:
                 if nxt == curr:
                     continue
-                d = dist(curr, nxt)
-                if g + d >= visited.get(nxt, math.inf):
+
+                new_g = g + dist(curr, nxt)
+
+                if new_g >= visited.get(nxt, math.inf):
                     continue
 
-                if is_line_clear(curr, nxt):
-                    heapq.heappush(open_set, (g + d + dist(nxt, goal), g + d, nxt, path + [nxt]))
+                if not is_line_clear(curr, nxt):
+                    continue
+
+                h = dist(nxt, goal)
+
+                heapq.heappush(
+                    open_set,
+                    (new_g + h, new_g, nxt, path + [nxt])
+                )
 
         return None, math.inf
 
-    # ---------- 6. 각 후보 목표 지점별 최단 경로 검색 및 선택 ----------
-    best_path = []
-    min_total_cost = math.inf
+    # 6. 출발점에서 가까운 도착 후보부터 탐색
+    target_candidates.sort(
+        key=lambda goal: (
+            dist2(robot_start, goal),
+            dist2(target_pos, goal)
+        )
+    )
 
-    # 로봇 시작점에서 바로 접근 가능한 후보 탐색
+    best_path = []
+
     for goal in target_candidates:
         path, cost = solve_astar(robot_start, goal)
-        if path and cost < min_total_cost:
-            min_total_cost = cost
-            best_path = path
 
-    # 연속적인 경로 다듬기 (Path Smoothing / Shortcut)
+        # 첫 번째 도달 가능한 후보를 선택
+        if path:
+            best_path = path
+            break
+
+    if not best_path:
+        return []
+
+    # 7. 경로 스무딩
     if len(best_path) > 2:
         smoothed = [best_path[0]]
         i = 0
+
         while i < len(best_path) - 1:
             j = len(best_path) - 1
+
             while j > i + 1:
-                if is_line_clear(smoothed[-1], best_path[j]):
+                if is_line_clear(
+                    best_path[i],
+                    best_path[j]
+                ):
                     break
+
                 j -= 1
+
             smoothed.append(best_path[j])
             i = j
+
         best_path = smoothed
 
     return best_path
+
 
 import cv2
 import numpy as np
@@ -1268,6 +1375,7 @@ def display_robot_path(
 
 
     return fig, ax
+
 
 
 
