@@ -1,3 +1,7 @@
+# 카메라 번호 0, 1..
+# carMovable = True
+# comport 지정
+
 import cv2
 import os
 import mediapipe as mp
@@ -12,7 +16,7 @@ if carMovable:
     import serial, time
 
     # 아까 확인한 내 컴퓨터의 COM 번호로 꼭 바꿔주세요! (예: 'COM5')
-    bluetooth_port = 'COM5' 
+    bluetooth_port = 'COM6' 
 
     print("블루투스 자동차에 연결하는 중...")
     # 자동차와 블루투스 전화 연결!
@@ -343,4 +347,5 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
+
 
