@@ -8,8 +8,8 @@ HSV_YELLOW = [(145, 20, 100), (170, 165, 255)] # 노란색 범위
 HSV_BLUE = [(100, 100, 100), (130, 255, 255)]  # 파란색 범위
 KERNEL = np.ones((5, 5), np.uint8)            # 통합을 위한 커널
 
-# 정삼각형을 그리기 위한 기준값 (중심에서 꼭짓점까지의 거리 R)
-R = 60
+# 정사각형을 그리기 위한 기준값 (중심에서 꼭짓점까지의 거리 R)
+R = 121
 
 def get_blobs(frame, lower, upper):
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
