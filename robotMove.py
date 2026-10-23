@@ -1,4 +1,4 @@
-import serial
+import serial, time
 
 # 아까 확인한 내 컴퓨터의 COM 번호로 꼭 바꿔주세요! (예: 'COM5')
 bluetooth_port = 'COM6' 
@@ -19,9 +19,24 @@ def stop():
     
 def move():
     car.write(b'go\n')
+def back():
+    car.write(b'back\n')
 
 if __name__ == "__main__":
+    print("stop")
+    stop()
+    time.sleep(1)
+    print("왼")
+    turn("CW")
+    time.sleep(1)
+    print("앞")
+    move()
+    time.sleep(1)
+    print("오른")
+    turn("CCW")
+    time.sleep(1)
     stop()
     # 통신 종료
     car.close()
     print("테스트 끝!")
+
