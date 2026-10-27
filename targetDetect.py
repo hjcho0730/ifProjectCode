@@ -11,13 +11,16 @@ import numpy as np
 from matrixCal import *
 from lineMade import *
 aaaaa= 0
+
+
+camera_num=0
 carMovable= True
+bluetooth_port = 'COM5' 
+
 if carMovable:
     import serial, time
 
     # 아까 확인한 내 컴퓨터의 COM 번호로 꼭 바꿔주세요! (예: 'COM5')
-    bluetooth_port = 'COM6' 
-
     print("블루투스 자동차에 연결하는 중...")
     # 자동차와 블루투스 전화 연결!
     car = serial.Serial(bluetooth_port, 9600)
@@ -130,7 +133,7 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 # 웹캠을 열어 실시간으로 영상을 가져옵니다.
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(camera_num)
 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
 matrix= None  # 2D -> 3D
@@ -142,11 +145,22 @@ route= [] #예정 경로
 planeDots= []
 sceneFrame= 0 # 0 ~ 99
 
+pos= (0,0)
+d3= (0,0)
+
+bbbbb= 0
+
 center= (0,0)
 forward= (0,0)
 RobotDetected= False
+
+sss= 0.0
+
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
+        print(round(1/(time.time()-sss), 2))
+        sss= time.time()
+        
         success, frame = cap.read()
         if not success:
             print("카메라로부터 영상을 가져올 수 없습니다.")
@@ -232,17 +246,19 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             robotPos(tuple)
         '''
         
-        pos= (0,0)
         forwardPos= (0,0)
         if matrix is not None and RobotDetected:
             pos= get3Dpos(matrix, center)
             forwardPos= get3Dpos(matrix, forward)
         
         
-        d3= (0,0)
         if len(bodyPoints) != 0:
-            
-            if matrix is not None and RobotDetected:
+            if len(route) <= 1:
+                bbbbb= 0
+            else:
+                bbbbb+=1
+                
+            if (bbbbb % 30 == 0) and (matrix is not None and RobotDetected):
                 tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
                 d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
                 d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
@@ -253,15 +269,15 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 pos= get3Dpos(matrix, center)
                 
                 extra_padding = {
-                    frozenset({6, 8}): 50,
-                    frozenset({4, 5}): 50,
-                    frozenset({5, 6}): 50,
-                    frozenset({0, 4}): 50,
-                    frozenset({0, 1}): 50,
-                    frozenset({1, 2}): 50,
-                    frozenset({2, 3}): 50,
-                    frozenset({3, 7}): 50,
-                    frozenset({9, 10}): 50,
+                    frozenset({6, 8}): 65,
+                    frozenset({4, 5}): 65,
+                    frozenset({5, 6}): 65,
+                    frozenset({0, 4}): 65,
+                    frozenset({0, 1}): 65,
+                    frozenset({1, 2}): 65,
+                    frozenset({2, 3}): 65,
+                    frozenset({3, 7}): 65,
+                    frozenset({9, 10}): 65,
                     #frozenset({11, 13}): 50,
                     #frozenset({13, 15}): 50,
                     #frozenset({12, 14}): 50,
@@ -272,8 +288,9 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                     #frozenset({26, 28}): 100,
                 }
                 
-                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 540, padding_radius=360, extra_padding_by_connection=extra_padding) #robotPos
-                print(route)
+                route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 600, padding_radius=350, extra_padding_by_connection=extra_padding) #robotPos
+                #print(route)
+                bbbbb= 0
                 
                 #display_robot_path(
                 #    route,
@@ -303,31 +320,50 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                         stop()
                         print("no body stop")
                     else:
-                        if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 500:
-                            stop()
-                            print("close stop", np.hypot(pos[0]-d3[0], pos[1]-d3[1]))
-                        else:
-                            if len(route) <= 1:
-                                stop()
-                                print("no routeqq stop")
-                            else:
-                                direction, angle= calculate_rotation(pos, forwardPos, route[1])
-                                
+                        #print(pos, d3)
+                        
+                        if len(route) > 2:
+                            if np.hypot(pos[0]-route[1][0], pos[1]-route[1][1]) < 50:
+                                route.pop(1)
+                        
+                        if len(route) <= 1:
+                            direction, angle= calculate_rotation(pos, forwardPos, d3)
+                            if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 800:
                                 if angle > 15:
                                     turn(direction)
-                                    print('angle', angle)
+                                    print('angle-arrive', angle)
                                 else:
-                                    print('f', angle)
+                                    print("arrive!!!!")
+                                    stop()
+                                    
+                                
+                                print("close stop", np.hypot(pos[0]-d3[0], pos[1]-d3[1]))
+                            else:
+                                if angle > 15:
+                                    turn(direction)
+                                    print('angle-line', angle)
+                                else:
                                     move()
+                                    print("line")
+                        else:                            
+                            direction, angle= calculate_rotation(pos, forwardPos, route[1])
+                        
+                            if angle > 15:
+                                turn(direction)
+                                print('angle', angle)
+                            else:
+                                print('f', angle)
+                                move()
+                            
         
 
         # 결과 화면 출력
         cv2.imshow('Pose Detection1', frame)
         try:
-            if matrix is not None and matrix_inv is not None and True:
-                if len(route) != 0:
-                   aaRoute= [transform_to_screen(matrix_inv, pptt) for pptt in route]
-                   frame = draw_robot_path(frame, aaRoute) 
+            if matrix is not None and matrix_inv is not None:
+                #if len(route) != 0:
+                #   aaRoute= [transform_to_screen(matrix_inv, pptt) for pptt in route]
+                #   frame = draw_robot_path(frame, aaRoute) 
                 ff= warp_perspective_no_crop(frame, matrix)
                 
                 ff = cv2.resize(ff, (w, h))
@@ -345,5 +381,6 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
+
 
 
