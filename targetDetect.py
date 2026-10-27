@@ -338,8 +338,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         # 'q'를 누르면 종료
         if cv2.waitKey(1) == ord('q'):
             break
-        
-        time.sleep(0.2)
 
 # 웹캠을 닫고 모든 창을 닫습니다.
 cap.release()
