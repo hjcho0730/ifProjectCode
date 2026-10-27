@@ -275,13 +275,13 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 540, padding_radius=360, extra_padding_by_connection=extra_padding) #robotPos
                 print(route)
                 
-                display_robot_path(
-                    route,
-                    points_list=tmpPList,
-                    connections=mp_pose.POSE_CONNECTIONS,
-                    save_path="robot_path.png",
-                    image_size=(12, 9),
-                )
+                #display_robot_path(
+                #    route,
+                #    points_list=tmpPList,
+                #    connections=mp_pose.POSE_CONNECTIONS,
+                #    save_path="robot_path.png",
+                #    image_size=(12, 9),
+                #)
                 
                 
                 #print(route)
