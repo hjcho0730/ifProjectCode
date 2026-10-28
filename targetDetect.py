@@ -181,9 +181,13 @@ RobotNotDetectedLim= 4
 
 is_arrived= False
 
+fps_cal_second= time.time()+1
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
-        print(round(1/(time.time()-fps_cal_second), 2))
+        if time.time()-fps_cal_second == 0:
+            print("inf")
+        else:
+            print(round(1/(time.time()-fps_cal_second), 2))
         fps_cal_second= time.time()
         
         success, frame = cap.read()
@@ -203,7 +207,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             # center, forward 구하지 말고, 바로 여기서(targetAruco=1 포함) pos, forwardPos로 만들어서 내보내자. ㅇㅇ
             
             RobotDetected=False
-            if suc1 and msuc2:    
+            if suc1 and suc2:    
                 center = np.mean(markPts, axis=0)
                 
                 forward= np.mean(markPts[:2], axis=0)
