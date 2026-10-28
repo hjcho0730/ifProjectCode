@@ -6,6 +6,7 @@ camera_num=0 #카메라는 몇번 사용?
 carMovable= True #자동차 쓸거임?
 bluetooth_port = 'COM5' #블루투스 송신 포트는?
 arm_use= True #팔 쓸거임?
+targetAruco= 1 # 몇개로 판별할 거야? (지금 지원중인 것: [1,]) ToDo: 2구현하기.
 
 arrived_times= 0
 arrived_times_sec= 5 #도착한 후 팔을 내릴 때까지 걸릴 시간. (회전 시간 포함임)
@@ -189,18 +190,37 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
         if not success:
             print("카메라로부터 영상을 가져올 수 없습니다.")
             continue
-        suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=1)
         
-        RobotDetected=False
-        if suc:    
-            center = np.mean(markPts, axis=0)
+        if targetAruco == 2:
+            suc1, markPts1, dImage = get_single_marker_corners_list(frame, target_id=1)
+            suc2, markPts2, dImage = get_single_marker_corners_list(frame, target_id=2)
             
-            forward= np.mean(markPts[:2], axis=0)
-            
-            cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
-            cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
-            
-            RobotDetected= True
+            ################## TODO!!!! 아루코 마커 2개로 감지하기... ########################
+        
+            RobotDetected=False
+            if suc:    
+                center = np.mean(markPts, axis=0)
+                
+                forward= np.mean(markPts[:2], axis=0)
+                
+                cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
+                cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
+                
+                RobotDetected= True
+            #################################################################################
+        else: # 1, etc(for except)
+            suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=1)
+        
+            RobotDetected=False
+            if suc:    
+                center = np.mean(markPts, axis=0)
+                
+                forward= np.mean(markPts[:2], axis=0)
+                
+                cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
+                cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
+                
+                RobotDetected= True
         
         suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=0)
         
