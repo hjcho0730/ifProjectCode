@@ -22,10 +22,10 @@ const int M2_IN2 = 12;
 const int M3_IN1 = 15;
 const int M3_IN2 = 14;
 
-const int motorSpeed = 150;
+const int motorSpeed = 165;
 
 // === 통신 타임아웃 및 미끄러방지(제동) 설정 ===
-const unsigned long TIMEOUT_MS = 550;     // 통신 끊김 판단 시간 (밀리초)
+const unsigned long TIMEOUT_MS = 117;     // 통신 끊김 판단 시간 (밀리초)
 unsigned long lastReceiveTime = 0;         // 마지막으로 통신이 수신된 시간
 bool isTimedOut = false;                 // 타임아웃 상태 플래그
 
@@ -39,7 +39,7 @@ enum MotionState {
 };
 
 MotionState lastMotion = STATE_IDLE;      // 마지막 동작 상태 기록 변수
-const int BRAKE_DELAY_MS = 80;            // 관성 상쇄용 반대 구동 유지 시간 (밀리초)
+const int BRAKE_DELAY_MS = 57;            // 관성 상쇄용 반대 구동 유지 시간 (밀리초)
 
 // === 비동기 제동(Non-blocking Brake)을 위한 상태 및 변수 ===
 enum BrakePhase {
@@ -148,7 +148,7 @@ void updateBrake() {
       break;
 
     case BRAKE_STAGE_PAUSE:
-      if (now - brakeTimer >= 30) {
+      if (now - brakeTimer >= 35) {
 
         // 직전 주행 방향의 반대 방향으로 짧게 구동
         if (targetBrakeMotion == STATE_FORWARD) {
