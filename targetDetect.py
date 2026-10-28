@@ -1,16 +1,18 @@
 # 카메라 번호 0, 1..
 # carMovable = True
 # comport 지정
-camera_num=0
-carMovable= True
-bluetooth_port = 'COM5'
+# arm_use = True
+camera_num=0 #카메라는 몇번 사용?
+carMovable= True #자동차 쓸거임?
+bluetooth_port = 'COM5' #블루투스 송신 포트는?
+arm_use= True #팔 쓸거임?
 
 arrived_times= 0
-arrived_times_sec= 5
+arrived_times_sec= 5 #도착한 후 팔을 내릴 때까지 걸릴 시간. (회전 시간 포함임)
 
 is_arm= False
 arm_time= 0
-arm_wait_time= 24
+arm_wait_time= 24 # 팔의 움직임을 기다릴 시간.
 
 import cv2
 #import os
@@ -335,7 +337,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                         #print(pos, d3)
                         
                         
-                        if (is_arrived and time.time()-arrived_times > arrived_times_sec) or is_arm:
+                        if arm_use and ((is_arrived and time.time()-arrived_times > arrived_times_sec) or is_arm):
                             if not is_arm:
                                 is_arm= True
                                 arm_time= time.time()
@@ -415,3 +417,8 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
+
+
+
+
+
