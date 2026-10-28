@@ -196,9 +196,14 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             suc2, markPts2, dImage = get_single_marker_corners_list(frame, target_id=2)
             
             ################## TODO!!!! 아루코 마커 2개로 감지하기... ########################
-        
+            #i think... offset 1/2 를 저장하기. -> 실행 중에는, 1,2의 좌표와 포워드를 행렬 변환 적용해 얻은 3d 좌표에 offset 만큼 더하고 빼서 중심 구하기.
+            # pos, forward를 3d로 저장하고 있으니 바로 대입하면 됨 ㅇㅇ
+            # 그리고, 둘 중 하나만 추출되면 하나만으로 오프셋해서 구하고, 둘다 있으면 둘다 써서 구하기. 고민 중인건, 둘 다 있을 때 둘 다 쓰면 렉이 걱정됨
+            # -> 하나에 우선순위 적용해서 하나씩만 계산하게 하면 될 듯함. 이건 일단 나중에.
+            # center, forward 구하지 말고, 바로 여기서(targetAruco=1 포함) pos, forwardPos로 만들어서 내보내자. ㅇㅇ
+            
             RobotDetected=False
-            if suc:    
+            if suc1 and msuc2:    
                 center = np.mean(markPts, axis=0)
                 
                 forward= np.mean(markPts[:2], axis=0)
