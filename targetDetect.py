@@ -45,11 +45,13 @@ if carMovable:
             car.write(b'stop\n')
         except Exception as e:
             print(f"Serial write error: {e}")
+            
     def move():
         try:
             car.write(b'go\n')
         except Exception as e:
             print(f"Serial write error: {e}")
+            
     def arm():
         try:
             car.write(b'arm\n')
@@ -81,8 +83,6 @@ def get_single_marker_corners_list(
   """
   debug_image = image.copy()
 
-  
-
   # 2. 마커 검출
   corners, ids, rejected = detector.detectMarkers(image)
 
@@ -108,7 +108,6 @@ def get_single_marker_corners_list(
     if marker_id == target_id:
       target_idx = i
       break
-  
       
   if target_idx == -1:
     cv2.putText(
@@ -202,7 +201,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
             
             RobotDetected= True
-            
         
         suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=0)
         
@@ -212,7 +210,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 planeDots.pop(0)
         
         frame= dImage
-
 
         h,w,_= frame.shape
 
@@ -275,14 +272,12 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             pos= get3Dpos(matrix, center)
             forwardPos= get3Dpos(matrix, forward)
         
-        
         if len(bodyPoints) != 0 and matrix is not None:
             tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
             d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
             d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
             d3= ((d1[0]*2+d2[0]) / 3, (d1[1]*2+d2[1]) / 3)
             if (len(route) <= 1 or (time.time() - prev_route_cal_time) > 0.5) and RobotDetected:
-                
                 
                 cv2.circle(frame, tuple(map(int, transform_to_screen(matrix_inv, d3))), 10, (255, 125, 0), -1)
                 
@@ -336,7 +331,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                     else:
                         #print(pos, d3)
                         
-                        
                         if arm_use and ((is_arrived and time.time()-arrived_times > arrived_times_sec) or is_arm):
                             if not is_arm:
                                 is_arm= True
@@ -365,8 +359,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                                     else:
                                         print("arrive!!!!")
                                         stop()
-                                        
-                                    
+                                                   
                                     print("close stop", np.hypot(pos[0]-d3[0], pos[1]-d3[1]))
                                 else:
                                     is_arrived= False
@@ -390,8 +383,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                                     else:
                                         print("arrived, but there is route... stop")
                                         stop()
-                            
-        
 
         # 결과 화면 출력
         cv2.imshow('Pose Detection1', frame)
@@ -417,8 +408,5 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
-
-
-
 
 
