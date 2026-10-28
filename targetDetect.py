@@ -181,10 +181,10 @@ RobotNotDetectedLim= 4
 
 is_arrived= False
 
-fps_cal_second= time.time()+1
+fps_cal_second= time.time()-1
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
-        if time.time()-fps_cal_second == 0:
+        if time.time()-fps_cal_second <= 1e-5:
             print("inf")
         else:
             print(round(1/(time.time()-fps_cal_second), 2))
