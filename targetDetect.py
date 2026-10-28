@@ -1,21 +1,17 @@
 # 카메라 번호 0, 1..
 # carMovable = True
 # comport 지정
+camera_num=1
+carMovable= True
+bluetooth_port = 'COM5' 
 
 import cv2
-import os
+#import os
 import mediapipe as mp
-
 import numpy as np
 
 from matrixCal import *
 from lineMade import *
-aaaaa= 0
-
-
-camera_num=0
-carMovable= True
-bluetooth_port = 'COM5' 
 
 if carMovable:
     import serial, time
@@ -27,15 +23,24 @@ if carMovable:
     time.sleep(2) # 연결될 때까지 2초 정도 기다려줍니다.
 
     def turn(dire):
-        if dire == "CW":
-            car.write(b"left\n") 
-        if dire == "CCW":
-            car.write(b"right\n")
+        try:
+            if dire == "CW":
+                car.write(b"left\n")
+            elif dire == "CCW":
+                car.write(b"right\n")
+        except Exception as e:
+            print(f"Serial write error: {e}")
             
     def stop():
-        car.write(b'stop\n')
+        try:
+            car.write(b'stop\n')
+        except Exception as e:
+            print(f"Serial write error: {e}")
     def move():
-        car.write(b'go\n')
+        try:
+            car.write(b'go\n')
+        except Exception as e:
+            print(f"Serial write error: {e}")
 
 #current_path = os.getcwd()
 #file_path = os.path.join(current_path, "my_list.txt")
@@ -148,18 +153,24 @@ sceneFrame= 0 # 0 ~ 99
 pos= (0,0)
 d3= (0,0)
 
-bbbbb= 0
+prev_route_cal_time= 0
 
 center= (0,0)
 forward= (0,0)
+forwardPos= (0,0)
 RobotDetected= False
 
-sss= 0.0
+fps_cal_second= 0.0
+
+robot_detect_frame= 0
+RobotNotDetectedLim= 4
+
+is_arrived= False
 
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
     while cap.isOpened():
-        print(round(1/(time.time()-sss), 2))
-        sss= time.time()
+        print(round(1/(time.time()-fps_cal_second), 2))
+        fps_cal_second= time.time()
         
         success, frame = cap.read()
         if not success:
@@ -246,23 +257,18 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             robotPos(tuple)
         '''
         
-        forwardPos= (0,0)
         if matrix is not None and RobotDetected:
             pos= get3Dpos(matrix, center)
             forwardPos= get3Dpos(matrix, forward)
         
         
         if len(bodyPoints) != 0:
-            if len(route) <= 1:
-                bbbbb= 0
-            else:
-                bbbbb+=1
+            tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
+            d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
+            d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
+            d3= ((d1[0]*2+d2[0]) / 3, (d1[1]*2+d2[1]) / 3)
+            if (len(route) <= 1 or (time.time() - prev_route_cal_time) > 0.5) and (matrix is not None and RobotDetected):
                 
-            if (bbbbb % 30 == 0) and (matrix is not None and RobotDetected):
-                tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
-                d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
-                d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
-                d3= ((d1[0]*2+d2[0]) / 3, (d1[1]*2+d2[1]) / 3)
                 
                 cv2.circle(frame, tuple(map(int, transform_to_screen(matrix_inv, d3))), 10, (255, 125, 0), -1)
                 
@@ -278,19 +284,12 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                     frozenset({2, 3}): 65,
                     frozenset({3, 7}): 65,
                     frozenset({9, 10}): 65,
-                    #frozenset({11, 13}): 50,
-                    #frozenset({13, 15}): 50,
-                    #frozenset({12, 14}): 50,
-                    #frozenset({14, 16}): 50,
-                    #frozenset({23, 25}): 100,
-                    #frozenset({25, 27}): 100,
-                    #frozenset({24, 26}): 100,
-                    #frozenset({26, 28}): 100,
                 }
                 
                 route= find_robot_path(tmpPList, mp_pose.POSE_CONNECTIONS, pos, d3, 600, padding_radius=350, extra_padding_by_connection=extra_padding) #robotPos
                 #print(route)
-                bbbbb= 0
+                if len(route) >= 2:
+                    prev_route_cal_time= time.time()
                 
                 #display_robot_path(
                 #    route,
@@ -299,9 +298,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 #    save_path="robot_path.png",
                 #    image_size=(12, 9),
                 #)
-                
-                
-                #print(route)
         
         if carMovable:
             if not (matrix is not None):
@@ -309,12 +305,13 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 print("Mat stop")
             else:
                 if not RobotDetected:
-                    aaaaa += 1
+                    robot_detect_frame += 1
                 else:
-                    aaaaa=0
-                if aaaaa > 2:
+                    robot_detect_frame=0
+                if robot_detect_frame > RobotNotDetectedLim:
                     stop()
                     print("Detect stop")
+                    robot_detect_frame= RobotNotDetectedLim+1
                 else:
                     if len(bodyPoints) == 0:
                         stop()
@@ -322,13 +319,14 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                     else:
                         #print(pos, d3)
                         
-                        if len(route) > 2:
+                        if len(route) >= 2:
                             if np.hypot(pos[0]-route[1][0], pos[1]-route[1][1]) < 50:
                                 route.pop(1)
                         
-                        if len(route) <= 1:
+                        if len(route) <= 1: ## 도착했거나, 도착 직전
                             direction, angle= calculate_rotation(pos, forwardPos, d3)
-                            if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 800:
+                            if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 780 + (30 if is_arrived else 0):
+                                is_arrived= True
                                 if angle > 15:
                                     turn(direction)
                                     print('angle-arrive', angle)
@@ -339,21 +337,28 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                                 
                                 print("close stop", np.hypot(pos[0]-d3[0], pos[1]-d3[1]))
                             else:
+                                is_arrived= False
                                 if angle > 15:
                                     turn(direction)
                                     print('angle-line', angle)
                                 else:
                                     move()
                                     print("line")
-                        else:                            
+                        else:
                             direction, angle= calculate_rotation(pos, forwardPos, route[1])
                         
                             if angle > 15:
                                 turn(direction)
                                 print('angle', angle)
                             else:
-                                print('f', angle)
-                                move()
+                                if (not is_arrived) or (is_arrived and np.hypot(pos[0]-d3[0], pos[1]-d3[1]) > 620):
+                                    is_arrived= False  
+                                    print('f', angle)
+                                    move()
+                                else:
+                                    print("arrived, but there is route... stop")
+                                    is_arrived= True
+                                    stop()
                             
         
 
@@ -364,10 +369,10 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 #if len(route) != 0:
                 #   aaRoute= [transform_to_screen(matrix_inv, pptt) for pptt in route]
                 #   frame = draw_robot_path(frame, aaRoute) 
-                ff= warp_perspective_no_crop(frame, matrix)
+                warped_frame= warp_perspective_no_crop(frame, matrix)
                 
-                ff = cv2.resize(ff, (w, h))
-                cv2.imshow('Pose Detection2', ff)
+                warped_frame = cv2.resize(warped_frame, (w, h))
+                cv2.imshow('Pose Detection2', warped_frame)
         except Exception as e:
             print(f"Error: {e}")
         
@@ -381,6 +386,7 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
+
 
 
 
