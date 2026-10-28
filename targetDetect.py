@@ -1,9 +1,16 @@
 # 카메라 번호 0, 1..
 # carMovable = True
 # comport 지정
-camera_num=1
+camera_num=0
 carMovable= True
-bluetooth_port = 'COM5' 
+bluetooth_port = 'COM5'
+
+arrived_times= 0
+arrived_times_sec= 5
+
+is_arm= False
+arm_time= 0
+arm_wait_time= 24
 
 import cv2
 #import os
@@ -39,6 +46,11 @@ if carMovable:
     def move():
         try:
             car.write(b'go\n')
+        except Exception as e:
+            print(f"Serial write error: {e}")
+    def arm():
+        try:
+            car.write(b'arm\n')
         except Exception as e:
             print(f"Serial write error: {e}")
 
@@ -262,12 +274,12 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             forwardPos= get3Dpos(matrix, forward)
         
         
-        if len(bodyPoints) != 0:
+        if len(bodyPoints) != 0 and matrix is not None:
             tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
             d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
             d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
             d3= ((d1[0]*2+d2[0]) / 3, (d1[1]*2+d2[1]) / 3)
-            if (len(route) <= 1 or (time.time() - prev_route_cal_time) > 0.5) and (matrix is not None and RobotDetected):
+            if (len(route) <= 1 or (time.time() - prev_route_cal_time) > 0.5) and RobotDetected:
                 
                 
                 cv2.circle(frame, tuple(map(int, transform_to_screen(matrix_inv, d3))), 10, (255, 125, 0), -1)
@@ -298,11 +310,12 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 #    save_path="robot_path.png",
                 #    image_size=(12, 9),
                 #)
-        
+            
         if carMovable:
             if not (matrix is not None):
                 stop()
                 print("Mat stop")
+                is_arrived= False
             else:
                 if not RobotDetected:
                     robot_detect_frame += 1
@@ -311,54 +324,70 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 if robot_detect_frame > RobotNotDetectedLim:
                     stop()
                     print("Detect stop")
+                    is_arrived= False
                     robot_detect_frame= RobotNotDetectedLim+1
                 else:
                     if len(bodyPoints) == 0:
                         stop()
+                        is_arrived= False
                         print("no body stop")
                     else:
                         #print(pos, d3)
                         
-                        if len(route) >= 2:
-                            if np.hypot(pos[0]-route[1][0], pos[1]-route[1][1]) < 50:
-                                route.pop(1)
                         
-                        if len(route) <= 1: ## 도착했거나, 도착 직전
-                            direction, angle= calculate_rotation(pos, forwardPos, d3)
-                            if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 780 + (30 if is_arrived else 0):
-                                is_arrived= True
-                                if angle > 15:
-                                    turn(direction)
-                                    print('angle-arrive', angle)
-                                else:
-                                    print("arrive!!!!")
-                                    stop()
-                                    
-                                
-                                print("close stop", np.hypot(pos[0]-d3[0], pos[1]-d3[1]))
+                        if (is_arrived and time.time()-arrived_times > arrived_times_sec) or is_arm:
+                            if not is_arm:
+                                is_arm= True
+                                arm_time= time.time()
+                                arm()
                             else:
-                                is_arrived= False
-                                if angle > 15:
-                                    turn(direction)
-                                    print('angle-line', angle)
-                                else:
-                                    move()
-                                    print("line")
+                                if time.time()-arm_time > arm_wait_time:
+                                    is_arm= False
+                                    is_arrived= False
+                            time.sleep(0.1)
                         else:
-                            direction, angle= calculate_rotation(pos, forwardPos, route[1])
-                        
-                            if angle > 15:
-                                turn(direction)
-                                print('angle', angle)
-                            else:
-                                if (not is_arrived) or (is_arrived and np.hypot(pos[0]-d3[0], pos[1]-d3[1]) > 620):
-                                    is_arrived= False  
-                                    print('f', angle)
-                                    move()
-                                else:
-                                    print("arrived, but there is route... stop")
+                            if len(route) >= 2:
+                                if np.hypot(pos[0]-route[1][0], pos[1]-route[1][1]) < 50:
+                                    route.pop(1)
+                            
+                            if len(route) <= 1: ## 도착했거나, 도착 직전
+                                direction, angle= calculate_rotation(pos, forwardPos, d3)
+                                if np.hypot(pos[0]-d3[0], pos[1]-d3[1]) < 780 + (30 if is_arrived else 0):
+                                    print(arrived_times, is_arrived, 1000)
+                                    if not is_arrived:
+                                        arrived_times= time.time()
                                     is_arrived= True
-                                    stop()
+                                    if angle > 15:
+                                        turn(direction)
+                                        print('angle-arrive', angle)
+                                    else:
+                                        print("arrive!!!!")
+                                        stop()
+                                        
+                                    
+                                    print("close stop", np.hypot(pos[0]-d3[0], pos[1]-d3[1]))
+                                else:
+                                    is_arrived= False
+                                    if angle > 15:
+                                        turn(direction)
+                                        print('angle-line', angle)
+                                    else:
+                                        move()
+                                        print("line")
+                            else:
+                                direction, angle= calculate_rotation(pos, forwardPos, route[1])
+                            
+                                if angle > 15:
+                                    turn(direction)
+                                    print('angle', angle)
+                                else:
+                                    if (not is_arrived) or (is_arrived and np.hypot(pos[0]-d3[0], pos[1]-d3[1]) > 620):
+                                        is_arrived= False  
+                                        print('f', angle)
+                                        move()
+                                    else:
+                                        print("arrived, but there is route... stop")
+                                        stop()
                             
         
 
@@ -386,7 +415,3 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
-
-
-
-
