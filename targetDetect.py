@@ -4,13 +4,13 @@
 # arm_use = True
 camera_num=0 #카메라는 몇번 사용?
 carMovable= True #자동차 쓸거임?
-bluetooth_port = 'COM5' #블루투스 송신 포트는?
+bluetooth_port = 'COM15' #블루투스 송신 포트는?
 arm_use= True #팔 쓸거임?
-targetAruco= 1 # 몇개로 판별할 거야? (지금 지원중인 것: [1,]) ToDo: 2구현하기.
+targetAruco= 2 # 몇개로 판별할 거야? (지금 지원중인 것: [1,]) ToDo: 2구현하기.
 
 ### x,y,n(한 변 길이)로 설정 예정. 지금 실행하면 에러남.
-offset1= (14, 2, 12) 
-offset2= (14, 2, 12) 
+offset1= (13, 2, 12) 
+offset2= (13, 2, 12) 
 ####################################################
 
 arrived_times= 0
@@ -192,7 +192,7 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             print("inf")
         else:
             print(round(1/(time.time()-fps_cal_second), 2))
-            if time.time()-fps_cal_second < 0.04:
+            if time.time()-fps_cal_second < 0.03:
                 time.sleep(0.04 - (time.time()-fps_cal_second) ) # 아두이노의 통신 버퍼가 차는 것을 방지하기 위함. 통신이 너무 오래 안 가면 자동 제동이 있으니 최소한만 기다리기.
         fps_cal_second= time.time()
         
@@ -261,8 +261,9 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                     forward= np.mean(markPts2[:2], axis=0)
                     right= np.mean(markPts2[1:3], axis=0)
                     
-                cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
-                cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
+                cv2.circle(dImageA, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
+                cv2.circle(dImageA, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
+                #cv2.circle(dImageA, tuple(int(i) for i in right), 10, (255, 125, 0), -1)
                     
                 if matrix is not None:
                     if suc1:
@@ -270,22 +271,22 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                         forwardPos1= get3Dpos(matrix, forward)
                         right1= get3Dpos(matrix, right)
                         
-                        w= (((forwardPos1[0]-pos1[0]) / offset1[2]) * 2, ((forwardPos1[1]-pos1[1]) / offset1[2]) * 2)
-                        r= (((right1[0]-pos1[0]) / offset1[2]) * 2, ((right1[1]-pos1[1]) / offset1[2]) * 2)
+                        wWw= (((forwardPos1[0]-pos1[0]) / offset1[2]) * 2, ((forwardPos1[1]-pos1[1]) / offset1[2]) * 2)
+                        rRr= (((right1[0]-pos1[0]) / offset1[2]) * 2, ((right1[1]-pos1[1]) / offset1[2]) * 2)
                         
-                        pos= (pos1[0] + r[0] * offset1[0] - w[0] * offset1[1], pos1[1] + r[1] * offset1[0] - w[1] * offset1[1])                        
-                        forwardPos= (pos[0] + w[0] * 4, pos[1] + w[1] * 4)
+                        pos= (pos1[0] + rRr[0] * offset1[0] - wWw[0] * offset1[1], pos1[1] + rRr[1] * offset1[0] - wWw[1] * offset1[1])                        
+                        forwardPos= (pos[0] + wWw[0] * 4, pos[1] + wWw[1] * 4)
                     else:
                         pos2= get3Dpos(matrix, center)
                         forwardPos2= get3Dpos(matrix, forward)
                         right2= get3Dpos(matrix, right)
                         
-                        w= (((forwardPos2[0]-pos2[0]) / offset2[2]) * 2, ((forwardPos2[1]-pos2[1]) / offset2[2]) * 2)
-                        r= (((right2[0]-pos2[0]) / offset2[2]) * 2, ((right2[1]-pos2[1]) / offset2[2]) * 2)
+                        wWw= (((forwardPos2[0]-pos2[0]) / offset2[2]) * 2, ((forwardPos2[1]-pos2[1]) / offset2[2]) * 2)
+                        rRr= (((right2[0]-pos2[0]) / offset2[2]) * 2, ((right2[1]-pos2[1]) / offset2[2]) * 2)
                         
-                        pos= (pos2[0] - r[0] * offset2[0] - w[0] * offset2[1], pos2[1] - r[1] * offset2[0] - w[1] * offset2[1])                        
-                        forwardPos= (pos[0] + w[0] * 4, pos[1] + w[1] * 4)
-                
+                        pos= (pos2[0] - rRr[0] * offset2[0] - wWw[0] * offset2[1], pos2[1] - rRr[1] * offset2[0] - wWw[1] * offset2[1])                        
+                        forwardPos= (pos[0] + wWw[0] * 4, pos[1] + wWw[1] * 4)
+
             #################################################################################
         else: # 1, etc(for except)
             suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=1)
@@ -296,8 +297,8 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 
                 forward= np.mean(markPts[:2], axis=0)
                 
-                cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
-                cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
+                cv2.circle(dImageA, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
+                cv2.circle(dImageA, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
                 
                 RobotDetected= True
             
@@ -305,6 +306,14 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             if matrix is not None and RobotDetected:
                 pos= get3Dpos(matrix, center)
                 forwardPos= get3Dpos(matrix, forward)
+                '''                
+                ppppp= transform_to_screen(matrix_inv, pos)
+                ppppp= (int(ppppp[0]), int(ppppp[1]))
+                cv2.circle(dImageA, ppppp, 10, (59, 125, 0), -1)
+                ppppp= transform_to_screen(matrix_inv, forwardPos)
+                ppppp= (int(ppppp[0]), int(ppppp[1]))
+                cv2.circle(dImageA, ppppp, 10, (0, 30, 255), -1)
+                '''
                 
         frame= dImageA
                 
@@ -344,11 +353,12 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             d1= ((tmpPList[11][0]+tmpPList[12][0])/2, (tmpPList[11][1]+tmpPList[12][1])/2)
             d2= ((tmpPList[23][0]+tmpPList[24][0])/2, (tmpPList[23][1]+tmpPList[24][1])/2)
             d3= ((d1[0]*2+d2[0]) / 3, (d1[1]*2+d2[1]) / 3)
+            if matrix_inv is not None:
+                cv2.circle(frame, tuple(map(int, transform_to_screen(matrix_inv, d3))), 10, (255, 125, 0), -1)
             if (len(route) <= 1 or (time.time() - prev_route_cal_time) > 0.5) and RobotDetected:
                 
-                cv2.circle(frame, tuple(map(int, transform_to_screen(matrix_inv, d3))), 10, (255, 125, 0), -1)
                 
-                pos= get3Dpos(matrix, center)
+                #pos= get3Dpos(matrix, center)
                 
                 extra_padding = {
                     frozenset({6, 8}): 65,
@@ -475,5 +485,6 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
+
 
 
