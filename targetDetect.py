@@ -8,6 +8,11 @@ bluetooth_port = 'COM5' #블루투스 송신 포트는?
 arm_use= True #팔 쓸거임?
 targetAruco= 1 # 몇개로 판별할 거야? (지금 지원중인 것: [1,]) ToDo: 2구현하기.
 
+### x,y,n(한 변 길이)로 설정 예정. 지금 실행하면 에러남.
+offset1= (14, 2, 12) 
+offset2= (14, 2, 12) 
+####################################################
+
 arrived_times= 0
 arrived_times_sec= 5 #도착한 후 팔을 내릴 때까지 걸릴 시간. (회전 시간 포함임)
 
@@ -15,7 +20,7 @@ is_arm= False
 arm_time= 0
 arm_wait_time= 24 # 팔의 움직임을 기다릴 시간.
 
-import cv2
+import cv2, time
 #import os
 import mediapipe as mp
 import numpy as np
@@ -24,7 +29,7 @@ from matrixCal import *
 from lineMade import *
 
 if carMovable:
-    import serial, time
+    import serial
 
     # 아까 확인한 내 컴퓨터의 COM 번호로 꼭 바꿔주세요! (예: 'COM5')
     print("블루투스 자동차에 연결하는 중...")
@@ -101,7 +106,6 @@ def get_single_marker_corners_list(
 
   ids = ids.flatten()
 
-  # 3. 타겟 ID 찾기
   # 3. 타겟 ID 찾기
   target_idx = -1
   for i, marker_id in enumerate(ids):
@@ -188,6 +192,8 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             print("inf")
         else:
             print(round(1/(time.time()-fps_cal_second), 2))
+            if time.time()-fps_cal_second < 0.04:
+                time.sleep(0.04 - (time.time()-fps_cal_second) ) # 아두이노의 통신 버퍼가 차는 것을 방지하기 위함. 통신이 너무 오래 안 가면 자동 제동이 있으니 최소한만 기다리기.
         fps_cal_second= time.time()
         
         success, frame = cap.read()
@@ -195,50 +201,14 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             print("카메라로부터 영상을 가져올 수 없습니다.")
             continue
         
-        if targetAruco == 2:
-            suc1, markPts1, dImage = get_single_marker_corners_list(frame, target_id=1)
-            suc2, markPts2, dImage = get_single_marker_corners_list(frame, target_id=2)
-            
-            ################## TODO!!!! 아루코 마커 2개로 감지하기... ########################
-            #i think... offset 1/2 를 저장하기. -> 실행 중에는, 1,2의 좌표와 포워드를 행렬 변환 적용해 얻은 3d 좌표에 offset 만큼 더하고 빼서 중심 구하기.
-            # pos, forward를 3d로 저장하고 있으니 바로 대입하면 됨 ㅇㅇ
-            # 그리고, 둘 중 하나만 추출되면 하나만으로 오프셋해서 구하고, 둘다 있으면 둘다 써서 구하기. 고민 중인건, 둘 다 있을 때 둘 다 쓰면 렉이 걱정됨
-            # -> 하나에 우선순위 적용해서 하나씩만 계산하게 하면 될 듯함. 이건 일단 나중에.
-            # center, forward 구하지 말고, 바로 여기서(targetAruco=1 포함) pos, forwardPos로 만들어서 내보내자. ㅇㅇ
-            
-            RobotDetected=False
-            if suc1 and suc2:    
-                center = np.mean(markPts, axis=0)
-                
-                forward= np.mean(markPts[:2], axis=0)
-                
-                cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
-                cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
-                
-                RobotDetected= True
-            #################################################################################
-        else: # 1, etc(for except)
-            suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=1)
-        
-            RobotDetected=False
-            if suc:    
-                center = np.mean(markPts, axis=0)
-                
-                forward= np.mean(markPts[:2], axis=0)
-                
-                cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
-                cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
-                
-                RobotDetected= True
-        
-        suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=0)
+        suc, markPts, dImageA = get_single_marker_corners_list(frame, target_id=0)
         
         if suc:
             planeDots.append(markPts)
             if len(planeDots) > 8:
                 planeDots.pop(0)
         
-        frame= dImage
+        #frame= dImage
 
         h,w,_= frame.shape
 
@@ -265,6 +235,78 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                 except Exception as e:
                     print(f"Error: {e}")
         ############################################
+        
+        
+        if targetAruco == 2:
+            suc1, markPts1, dImage = get_single_marker_corners_list(frame, target_id=1)
+            suc2, markPts2, dImage = get_single_marker_corners_list(frame, target_id=2)
+            
+            ################## TODO!!!! 아루코 마커 2개로 감지하기... ########################
+            #i think... offset 1/2 를 저장하기. -> 실행 중에는, 1,2의 좌표와 포워드를 행렬 변환 적용해 얻은 3d 좌표에 offset 만큼 더하고 빼서 중심 구하기.
+            # pos, forward를 3d로 저장하고 있으니 바로 대입하면 됨 ㅇㅇ
+            # 그리고, 둘 중 하나만 추출되면 하나만으로 오프셋해서 구하고, 둘다 있으면 둘다 써서 구하기. 고민 중인건, 둘 다 있을 때 둘 다 쓰면 렉이 걱정됨
+            # -> 하나에 우선순위 적용해서 하나씩만 계산하게 하면 될 듯함. 이건 일단 나중에.
+            # center, forward 구하지 말고, 바로 여기서(targetAruco=1 포함) pos, forwardPos로 만들어서 내보내자. ㅇㅇ
+            
+            RobotDetected=False
+            if suc1 or suc2:
+                RobotDetected= True
+                
+                if suc1:
+                    center = np.mean(markPts1, axis=0)
+                    forward= np.mean(markPts1[:2], axis=0)
+                    right= np.mean(markPts1[1:3], axis=0)
+                else:
+                    center = np.mean(markPts2, axis=0)
+                    forward= np.mean(markPts2[:2], axis=0)
+                    right= np.mean(markPts2[1:3], axis=0)
+                    
+                cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
+                cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
+                    
+                if matrix is not None:
+                    if suc1:
+                        pos1= get3Dpos(matrix, center)
+                        forwardPos1= get3Dpos(matrix, forward)
+                        right1= get3Dpos(matrix, right)
+                        
+                        w= (((forwardPos1[0]-pos1[0]) / offset1[2]) * 2, ((forwardPos1[1]-pos1[1]) / offset1[2]) * 2)
+                        r= (((right1[0]-pos1[0]) / offset1[2]) * 2, ((right1[1]-pos1[1]) / offset1[2]) * 2)
+                        
+                        pos= (pos1[0] + r[0] * offset1[0] - w[0] * offset1[1], pos1[1] + r[1] * offset1[0] - w[1] * offset1[1])                        
+                        forwardPos= (pos[0] + w[0] * 4, pos[1] + w[1] * 4)
+                    else:
+                        pos2= get3Dpos(matrix, center)
+                        forwardPos2= get3Dpos(matrix, forward)
+                        right2= get3Dpos(matrix, right)
+                        
+                        w= (((forwardPos2[0]-pos2[0]) / offset2[2]) * 2, ((forwardPos2[1]-pos2[1]) / offset2[2]) * 2)
+                        r= (((right2[0]-pos2[0]) / offset2[2]) * 2, ((right2[1]-pos2[1]) / offset2[2]) * 2)
+                        
+                        pos= (pos2[0] - r[0] * offset2[0] - w[0] * offset2[1], pos2[1] - r[1] * offset2[0] - w[1] * offset2[1])                        
+                        forwardPos= (pos[0] + w[0] * 4, pos[1] + w[1] * 4)
+                
+            #################################################################################
+        else: # 1, etc(for except)
+            suc, markPts, dImage = get_single_marker_corners_list(frame, target_id=1)
+        
+            RobotDetected=False
+            if suc:    
+                center = np.mean(markPts, axis=0)
+                
+                forward= np.mean(markPts[:2], axis=0)
+                
+                cv2.circle(frame, tuple(int(i) for i in center), 10, (255, 125, 0), -1)
+                cv2.circle(frame, tuple(int(i) for i in forward), 10, (255, 125, 0), -1)
+                
+                RobotDetected= True
+            
+            
+            if matrix is not None and RobotDetected:
+                pos= get3Dpos(matrix, center)
+                forwardPos= get3Dpos(matrix, forward)
+                
+        frame= dImageA
                 
         # 포즈 랜드마크가 감지되면 랜드마크와 연결선 그리기
         blue_pts= []
@@ -296,10 +338,6 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             robotDetected(bool)
             robotPos(tuple)
         '''
-        
-        if matrix is not None and RobotDetected:
-            pos= get3Dpos(matrix, center)
-            forwardPos= get3Dpos(matrix, forward)
         
         if len(bodyPoints) != 0 and matrix is not None:
             tmpPList= [get3Dpos(matrix, bodyPoints[kkkk]) for kkkk in range(33)]
