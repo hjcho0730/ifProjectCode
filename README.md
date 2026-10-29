@@ -3,7 +3,7 @@
 
 버전: Python 3.10.11
 <br>
-pip install -r requirements.txt
+python -m pip install -r "C:\Users\user\Downloads\ifProjectCode-main\ifProjectCode-main\requirements.txt"
 
 
 ##############
