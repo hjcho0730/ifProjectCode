@@ -13,3 +13,7 @@ pip freeze '> requirements.txt
 ##############
 
 winget install Python.Python.3.10 --version 3.10.11 --no-upgrade --force
+
+
+################
+Adafruit_NeoPixel
