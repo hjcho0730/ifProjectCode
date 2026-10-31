@@ -2,15 +2,15 @@
 # carMovable = True
 # comport 지정
 # arm_use = True
-camera_num=0 #카메라는 몇번 사용?
+camera_num=1 #카메라는 몇번 사용?
 carMovable= True #자동차 쓸거임?
-bluetooth_port = 'COM15' #블루투스 송신 포트는?
-arm_use= True #팔 쓸거임?
-targetAruco= 2 # 몇개로 판별할 거야? (지금 지원중인 것: [1, 2], 이외의 값은 1로 취급)
+bluetooth_port = 'COM5' #블루투스 송신 포트는?
+arm_use= False #팔 쓸거임?
+targetAruco= 1 # 몇개로 판별할 거야? (지금 지원중인 것: [1, 2], 이외의 값은 1로 취급)
 
 ### x,y,n(한 변 길이)로 설정 예정. 꼭!!!!!!!!!!!! 설정하기
-offset1= (13, 2, 12) 
-offset2= (13, 2, 12) 
+offset1= (130, 30, 120) 
+offset2= (120, 35, 120) 
 ####################################################
 
 arrived_times= 0
@@ -485,6 +485,7 @@ cv2.destroyAllWindows()
 
 if carMovable:
     car.close()
+
 
 
 
