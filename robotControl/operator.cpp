@@ -4,7 +4,7 @@
 
 /// 설정.
 #define USE_ARM false
-#define USE_LED false
+#define USE_LED true
 ///
 
 // 핀 정의
@@ -47,7 +47,7 @@ const int M2_IN2 = 12;
 const int M3_IN1 = 15;
 const int M3_IN2 = 14;
 
-const int motorSpeed = 165;
+const int motorSpeed = 190;
 
 // === 통신 타임아웃 및 미끄러방지(제동) 설정 ===
 const unsigned long TIMEOUT_MS = 117;     // 통신 끊김 판단 시간 (밀리초)
@@ -397,19 +397,19 @@ void updateLEDs(int count) {
 void loop() {
   if (USE_LED) {
     // 1. 초음파 거리 측정 (cm 단위)
-    long distance = measureDistance();
+    //long distance = measureDistance();
   
-    Serial.print("Distance: ");
-    Serial.print(distance);
-    Serial.println(" cm");
+    //Serial.print("Distance: ");
+    //Serial.print(distance);
+    //Serial.println(" cm");
 
     // 2. 거리에 따른 LED 켜질 개수 계산 (가까울수록 많이 켜짐)
     // 예: 5cm 이하일 때 32개 모두 켜짐, 40cm 이상일 때 모두 꺼짐 (0개)
-    int litCount = map(distance, 5, 40, TOTAL_LEDS, 0);
-    litCount = constrain(litCount, 0, TOTAL_LEDS); // 범위를 0~32 사이로 제한
+    //int litCount = map(distance, 5, 40, TOTAL_LEDS, 0);
+    //litCount = constrain(litCount, 0, TOTAL_LEDS); // 범위를 0~32 사이로 제한
 
     // 3. LED 상태 업데이트
-    updateLEDs(litCount);
+    updateLEDs(32);
   }
 
   // 0. 비동기 제동 및 로봇팔 프로세스 업데이트 (블로킹 없이 계속 실행됨)
